@@ -1,2 +1,6 @@
 /.env.local
 /node_modules
+# Python cache
+apps/api/__pycache__/
+# FAISS 向量資料庫
+apps/api/vectorstore/
