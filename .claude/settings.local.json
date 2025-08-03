@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(dir:*)",
+      "WebFetch(domain:next-auth.js.org)",
+      "Bash(curl:*)",
+      "Bash(rm:*)",
+      "Bash(npm install:*)"
+    ],
+    "deny": []
+  }
+}

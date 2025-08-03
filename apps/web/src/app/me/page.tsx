@@ -1,6 +1,7 @@
 "use client"
 
 import { useSession } from "next-auth/react"
+import Image from "next/image"
 
 export default function MePage() {
   const { data: session, status } = useSession()
@@ -18,7 +19,14 @@ export default function MePage() {
       {session && session.user ? (
         <>
           <h1 className="text-xl font-bold">歡迎回來 {session.user.name}</h1>
-          <p className="mt-2">userId: {session.user.lineId}</p>
+          {session.user.image && (
+            <Image
+              src={session.user.image}
+              alt="user image"
+              width={100}
+              height={100}
+            />
+          )}
         </>
       ) : (
         <h1 className="text-xl font-bold">尚未登入</h1>
