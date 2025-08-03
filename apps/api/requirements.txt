@@ -1,0 +1,10 @@
+pymupdf
+langchain
+langchain-community
+faiss-cpu
+openai
+sentence-transformers
+uvicorn
+transformers
+accelerate
+fastapi

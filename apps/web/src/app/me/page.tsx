@@ -2,6 +2,7 @@
 
 import { useSession } from "next-auth/react"
 import Image from "next/image"
+import Chat from "../components/ChatPanel"
 
 export default function MePage() {
   const { data: session, status } = useSession()
@@ -27,6 +28,7 @@ export default function MePage() {
               height={100}
             />
           )}
+          <Chat />
         </>
       ) : (
         <h1 className="text-xl font-bold">尚未登入</h1>
