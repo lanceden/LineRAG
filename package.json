@@ -1,0 +1,14 @@
+{
+    "name": "line-rag-monorepo",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "dev:web": "turbo run dev --filter=line-rag-lite",
+        "dev:api": "turbo run dev --filter=api",
+        "dev": "turbo run dev"
+    },
+    "devDependencies": {
+        "turbo": "latest"
+    },
+    "packageManager": "pnpm@10.11.0"
+}
