@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 
 interface Message {
   id: string
@@ -12,6 +12,11 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages, isLoading])
 
   const sendMessage = async (text: string) => {
     const userMessage: Message = {
@@ -22,6 +27,15 @@ export default function Chat() {
 
     setMessages((prev) => [...prev, userMessage])
     setIsLoading(true)
+
+    // 預先建立一個空的 assistant 訊息，準備即時更新
+    const assistantId = (Date.now() + 1).toString()
+    const assistantMessage: Message = {
+      id: assistantId,
+      role: "assistant",
+      parts: [{ type: "text", text: "" }],
+    }
+    setMessages((prev) => [...prev, assistantMessage])
 
     try {
       const response = await fetch("/api/ask", {
@@ -41,6 +55,7 @@ export default function Chat() {
       let assistantText = ""
 
       if (reader) {
+        setIsLoading(false)
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
@@ -53,7 +68,19 @@ export default function Chat() {
               try {
                 const data = JSON.parse(line.slice(6))
                 if (data.type === "text") {
-                  assistantText = data.text
+                  assistantText += data.text // 累積字符
+
+                  // 即時更新 assistant 訊息
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantId
+                        ? {
+                            ...msg,
+                            parts: [{ type: "text", text: assistantText }],
+                          }
+                        : msg
+                    )
+                  )
                 }
               } catch (e) {
                 console.error("Failed to parse JSON:", e)
@@ -63,21 +90,31 @@ export default function Chat() {
         }
       }
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        parts: [{ type: "text", text: assistantText || "回覆失敗" }],
+      // 如果沒有收到任何內容，顯示錯誤訊息
+      if (!assistantText) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantId
+              ? { ...msg, parts: [{ type: "text", text: "回覆失敗" }] }
+              : msg
+          )
+        )
       }
-
-      setMessages((prev) => [...prev, assistantMessage])
     } catch (error) {
       console.error("Error sending message:", error)
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        parts: [{ type: "text", text: "發送訊息時發生錯誤，請稍後再試" }],
-      }
-      setMessages((prev) => [...prev, errorMessage])
+      // 更新 assistant 訊息為錯誤訊息
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantId
+            ? {
+                ...msg,
+                parts: [
+                  { type: "text", text: "發送訊息時發生錯誤，請稍後再試" },
+                ],
+              }
+            : msg
+        )
+      )
     } finally {
       setIsLoading(false)
     }
@@ -116,6 +153,7 @@ export default function Chat() {
             </div>
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
       <form onSubmit={handleFormSubmit} className="flex gap-2">
         <input

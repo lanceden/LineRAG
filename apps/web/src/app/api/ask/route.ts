@@ -26,29 +26,10 @@ export async function POST(req: NextRequest) {
             throw new Error(`HTTP error! status: ${res.status}`)
         }
 
-        const data = await res.json()
-        const answer = data.answer || '回覆失敗'
-
-        // 回傳流式文字回應
-        const encoder = new TextEncoder()
-
-        const stream = new ReadableStream({
-            start(controller) {
-                // 發送回應文字
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                    type: 'text',
-                    text: answer
-                })}\n\n`))
-
-                // 結束流
-                controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-                controller.close()
-            }
-        })
-
-        return new Response(stream, {
+        // 直接將 FastAPI 的 stream pipe 給前端
+        return new Response(res.body, {
             headers: {
-                'Content-Type': 'text/plain; charset=utf-8',
+                'Content-Type': 'text/event-stream; charset=utf-8',
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
             }
