@@ -55,18 +55,22 @@ export default function FileUpload({
       const response = await fetch("/api/upload")
 
       if (!response.ok) {
-        throw new Error("無法獲取文檔列表")
+        const errorText = await response.text()
+        console.error("API response error:", response.status, errorText)
+        throw new Error(`無法獲取文檔列表: ${response.status}`)
       }
 
       const data = await response.json()
+      console.log("Documents fetched successfully:", data)
       setDocumentsFromAPI(data.documents || [])
     } catch (error) {
       console.error("獲取文檔列表失敗:", error)
-      onUploadError?.("無法載入文檔列表")
+      // Don't call onUploadError here to avoid UI errors during normal loading
+      // onUploadError?.("無法載入文檔列表")
     } finally {
       setIsLoadingDocuments(false)
     }
-  }, [onUploadError])
+  }, [])
 
   // 刪除文檔
   const deleteDocument = async (docId: string, filename: string) => {

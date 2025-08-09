@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const file = formData.get('file') as File
     const useOCR = formData.get('use_ocr') === 'true'
-    
+
     if (!file) {
       return NextResponse.json(
         { error: '沒有選擇檔案' },
@@ -22,10 +22,10 @@ export async function POST(request: NextRequest) {
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ]
-    
+
     const allowedExtensions = ['.pdf', '.doc', '.docx']
     const fileExtension = path.extname(file.name).toLowerCase()
-    
+
     if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
       return NextResponse.json(
         { error: '不支援的檔案格式，請上傳 PDF 或 Word 檔案' },
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     // 呼叫 Python API 處理檔案
     try {
-      const pythonApiUrl = process.env.PYTHON_API_URL || 'http://localhost:8001'
+      const pythonApiUrl = process.env.PYTHON_API_URL || 'http://localhost:8000'
       const processResponse = await fetch(`${pythonApiUrl}/ingest`, {
         method: 'POST',
         headers: {
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       }
 
       const result = await processResponse.json()
-      
+
       return NextResponse.json({
         message: `檔案上傳並處理成功 (${useOCR ? 'OCR 模式' : '傳統模式'})`,
         fileName: file.name,
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
 
     } catch (processError) {
       console.error('Processing error:', processError)
-      
+
       // 即使處理失敗，檔案也已上傳成功
       return NextResponse.json({
         message: '檔案上傳成功，但處理時發生錯誤',
@@ -119,16 +119,16 @@ export async function POST(request: NextRequest) {
 // 獲取已上傳檔案列表
 export async function GET() {
   try {
-    const pythonApiUrl = process.env.PYTHON_API_URL || 'http://localhost:8001'
+    const pythonApiUrl = process.env.PYTHON_API_URL || 'http://localhost:8000'
     const response = await fetch(`${pythonApiUrl}/documents`)
-    
+
     if (!response.ok) {
       throw new Error('無法獲取檔案列表')
     }
-    
+
     const documents = await response.json()
     return NextResponse.json(documents)
-    
+
   } catch (error) {
     console.error('Get documents error:', error)
     return NextResponse.json(
@@ -143,7 +143,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const docId = searchParams.get('docId')
-    
+
     if (!docId) {
       return NextResponse.json(
         { error: '缺少文檔 ID' },
@@ -151,7 +151,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    const pythonApiUrl = process.env.PYTHON_API_URL || 'http://localhost:8001'
+    const pythonApiUrl = process.env.PYTHON_API_URL || 'http://localhost:8000'
     const response = await fetch(`${pythonApiUrl}/documents/${docId}`, {
       method: 'DELETE'
     })
