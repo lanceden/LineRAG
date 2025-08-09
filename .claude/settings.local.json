@@ -6,7 +6,9 @@
       "WebFetch(domain:next-auth.js.org)",
       "Bash(curl:*)",
       "Bash(rm:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)"
     ],
     "deny": []
   }
