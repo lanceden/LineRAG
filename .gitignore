@@ -7,3 +7,11 @@ apps/api/vectorstore/
 /.turbo
 apps/api/local_qdrant
 qdrant_storage
+# Uploads directory
+apps/api/uploads/
+# PDFs directory
+apps/api/pdfs/
+# Next.js build output
+apps/web/.next/
+# Python compiled files
+*.pyc
