@@ -6,3 +6,4 @@ apps/api/__pycache__/
 apps/api/vectorstore/
 /.turbo
 apps/api/local_qdrant
+qdrant_storage
