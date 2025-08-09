@@ -1,19 +1,50 @@
+# Core FastAPI and web framework
+fastapi
+uvicorn
+python-multipart
+
+# Pydantic for data validation  
+pydantic
+
+# HTTP clients
+requests
+httpx
+
+# Document processing and PDF handling
 pymupdf
 langchain
 langchain-community
+python-docx
+docx2pdf
+
+# Vector database and embeddings
 qdrant-client
-openai
 sentence-transformers
-uvicorn
+
+# LLM integration
+openai
+
+# AI/ML frameworks
+torch
+torchvision  
 transformers
 accelerate
-fastapi
-python-docx
-python-multipart
-torch
-torchvision
+
+# Image processing
 Pillow
-qwen-vl-utils
-docx2pdf
 opencv-python
-python-multipart
+
+# Multimodal AI models
+qwen-vl-utils
+
+# Utility packages
+tqdm
+pathlib2
+python-dotenv
+
+# Redis for task queue
+redis
+aioredis
+
+# Development tools
+debugpy

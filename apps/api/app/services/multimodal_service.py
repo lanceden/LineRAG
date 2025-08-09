@@ -10,6 +10,9 @@ import torch
 from transformers import AutoProcessor, AutoModelForVision2Seq
 import requests
 from pathlib import Path
+import logging
+
+logger = logging.getLogger("linerag.services.multimodal")
 
 class MultimodalService:
     def __init__(self, model_name: str = "Qwen/Qwen2-VL-2B-Instruct"):
@@ -27,16 +30,16 @@ class MultimodalService:
     def load_model(self):
         """載入多模態模型"""
         try:
-            print(f"正在載入多模態模型: {self.model_name}")
+            logger.info(f"Loading multimodal model: {self.model_name}")
             self.processor = AutoProcessor.from_pretrained(self.model_name)
             self.model = AutoModelForVision2Seq.from_pretrained(
                 self.model_name,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 device_map="auto" if self.device == "cuda" else None
             )
-            print(f"✅ 多模態模型載入成功，使用設備: {self.device}")
+            logger.info(f"Multimodal model loaded. device={self.device}")
         except Exception as e:
-            print(f"❌ 多模態模型載入失敗: {e}")
+            logger.exception("Failed to load multimodal model")
             raise
     
     def process_image_with_text(self, image_path: str, prompt: str) -> str:
@@ -103,7 +106,7 @@ class MultimodalService:
             return response.strip()
             
         except Exception as e:
-            print(f"圖片處理失敗: {e}")
+            logger.exception("Image processing failed")
             return f"抱歉，處理圖片時發生錯誤: {str(e)}"
     
     def extract_text_from_image(self, image_path: str) -> str:

@@ -6,9 +6,24 @@ import os
 import tempfile
 from typing import List, Tuple
 from pathlib import Path
+import logging
+
+logger = logging.getLogger("linerag.services.docproc")
 import fitz  # PyMuPDF
-from docx2pdf import convert
-from PIL import Image
+try:
+    from docx2pdf import convert
+    DOCX2PDF_AVAILABLE = True
+except ImportError:
+    logger.warning("docx2pdf not available - OCR for Word documents will be disabled")
+    DOCX2PDF_AVAILABLE = False
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    logger.warning("PIL not available - image processing will be disabled")
+    PIL_AVAILABLE = False
+
 import uuid
 class DocumentProcessor:
     def __init__(self):
@@ -46,10 +61,10 @@ class DocumentProcessor:
                 image_paths.append(image_path)
                 
             pdf_document.close()
-            print(f"✅ PDF 轉換完成，共 {len(image_paths)} 頁")
+            logger.info(f"PDF converted pages={len(image_paths)}")
             
         except Exception as e:
-            print(f"❌ PDF 轉換失敗: {e}")
+            logger.exception("PDF conversion failed")
             raise
             
         return image_paths
@@ -65,6 +80,9 @@ class DocumentProcessor:
         Returns:
             圖片文件路徑列表
         """
+        if not DOCX2PDF_AVAILABLE:
+            raise ImportError("docx2pdf not available - cannot convert Word documents for OCR")
+            
         try:
             # 先轉換為 PDF
             temp_pdf_path = os.path.join(output_dir, "temp.pdf")
@@ -77,11 +95,11 @@ class DocumentProcessor:
             if os.path.exists(temp_pdf_path):
                 os.remove(temp_pdf_path)
                 
-            print(f"✅ Word 轉換完成，共 {len(image_paths)} 頁")
+            logger.info(f"Word converted pages={len(image_paths)}")
             return image_paths
             
         except Exception as e:
-            print(f"❌ Word 轉換失敗: {e}")
+            logger.exception("Word conversion failed")
             # 如果轉換失敗，嘗試直接使用原有的文字提取方法
             raise
     
@@ -89,10 +107,10 @@ class DocumentProcessor:
         """Lazy loading of multimodal service to avoid circular imports"""
         if self.multimodal_service is None:
             try:
-                from multimodal_service import get_multimodal_service
+                from app.services.multimodal_service import get_multimodal_service
                 self.multimodal_service = get_multimodal_service()
             except ImportError as e:
-                print(f"Error importing multimodal service: {e}")
+                logger.exception("Import multimodal service failed")
                 return None
         return self.multimodal_service
     
@@ -108,24 +126,24 @@ class DocumentProcessor:
         """
         multimodal_service = self._get_multimodal_service()
         if multimodal_service is None:
-            print("❌ 多模態服務不可用，無法進行 OCR")
+            logger.error("Multimodal service unavailable; OCR disabled")
             return []
             
         extracted_texts = []
         
         for i, image_path in enumerate(image_paths):
             try:
-                print(f"正在處理第 {i + 1} 頁...")
+                logger.info(f"OCR processing page={i + 1}")
                 text = multimodal_service.extract_text_from_image(image_path)
                 
                 if text.strip():  # 只保存非空文字
                     extracted_texts.append((i + 1, text))
-                    print(f"✅ 第 {i + 1} 頁文字提取完成")
+                    logger.info(f"OCR extracted page={i + 1}")
                 else:
-                    print(f"⚠️ 第 {i + 1} 頁未檢測到文字")
+                    logger.warning(f"OCR empty page={i + 1}")
                     
             except Exception as e:
-                print(f"❌ 第 {i + 1} 頁文字提取失敗: {e}")
+                logger.exception(f"OCR extract failed page={i + 1}")
                 continue
                 
         return extracted_texts
@@ -158,7 +176,7 @@ class DocumentProcessor:
             # 從圖片中提取文字
             extracted_texts = self.extract_text_from_images(image_paths)
             
-            print(f"✅ 文檔 {original_name} OCR 處理完成，共提取 {len(extracted_texts)} 頁文字")
+            logger.info(f"OCR done file={original_name} pages={len(extracted_texts)}")
             return extracted_texts
             
         finally:
@@ -167,7 +185,7 @@ class DocumentProcessor:
                 import shutil
                 shutil.rmtree(temp_dir)
             except Exception as e:
-                print(f"清理臨時文件失敗: {e}")
+                logger.warning(f"Cleanup temp dir failed: {e}")
 
 # 全局文檔處理器實例
 document_processor = DocumentProcessor()

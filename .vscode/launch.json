@@ -1,21 +1,60 @@
 {
-    // 使用 IntelliSense 以得知可用的屬性。
-    // 暫留以檢視現有屬性的描述。
-    // 如需詳細資訊，請瀏覽: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
         {
-            "name": "Python 偵錯工具: 遠端附加",
+            "name": "🚀 Debug FastAPI",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "main:app",
+                "--reload",
+                "--host", "0.0.0.0", 
+                "--port", "8000",
+                "--log-level", "info",
+                "--workers", "1"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/apps/api",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/apps/api"
+            },
+            "python": "${command:python.interpreterPath}"
+        },
+        {
+            "name": "🔧 Debug FastAPI (Direct)",
+            "type": "debugpy",
+            "request": "launch", 
+            "program": "${workspaceFolder}/apps/api/main.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/apps/api",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/apps/api"
+            }
+        },
+        {
+            "name": "🚀 Debug Next.js",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/apps/web/node_modules/.bin/next",
+            "args": ["dev"],
+            "cwd": "${workspaceFolder}/apps/web",
+            "console": "integratedTerminal",
+            "env": {
+                "NODE_ENV": "development"
+            }
+        },
+        {
+            "name": "🔗 Attach to FastAPI",
             "type": "debugpy",
             "request": "attach",
             "connect": {
                 "host": "localhost",
-                "port": 8000
+                "port": 5678
             },
             "pathMappings": [
                 {
-                    "localRoot": "${workspaceFolder}",
+                    "localRoot": "${workspaceFolder}/apps/api",
                     "remoteRoot": "."
                 }
             ]
