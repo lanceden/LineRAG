@@ -15,7 +15,7 @@
 | GPU      | RTX 5090 x1（可擴充雙卡）                                  | 單卡支援 20-30 併發用戶，支援 Qwen2-7B、Yi-9B 等中型模型；如需更高併發可升級雙卡                                                                                                                                                                                                       |
 |          |                                                            | * 建議可支援模型（多模態佳，中文優先，考量 RTX 5090 兼容性）：                                                                                                                                                                                                                         |
 |          |                                                            | * gpt-oss (20B)                                                                                                                                                                                                                                                                        |
-|          |                                                            | * Qwen-VL-Chat (8B)                                                                                                                                                                                                                                                                    |
+|          |                                                            | * Qwen2.5-VL-instruct (32B)                                                                                                                                                                                                                                                            |
 |          |                                                            | * MiniCPM (7B)                                                                                                                                                                                                                                                                         |
 | CPU      | Intel Xeon / AMD Threadripper                              | 多線程文件處理與檢索分流                                                                                                                                                                                                                                                               |
 | RAM      | 128GB DDR5 ECC                                             | 確保文件快取與模型 Loading 穩定                                                                                                                                                                                                                                                        |
@@ -124,6 +124,33 @@
 * 完全的資料隔離和訪問控制
 * 獨立的效能調優和系統配置
 * 簡化的維運和故障排除
+
+---
+
+## 七、🔄 模型切換策略（開發 vs 上線）
+
+為避免開發階段使用小模型、上線後切換大型模型導致效能瓶頸或架構崩潰，建議採用「模型可插拔」設計：
+
+開發階段：使用 Qwen2.5-VL-3B-Instruct-AWQ 或 MiniCPM-V 進行流程模擬與介面開發。
+
+上線階段：切換至 Qwen2.5-VL-7B/32B-Instruct（AWQ 量化），只需調整模型路徑與推理引擎參數。
+
+架構抽象化：推理層與 API 層分離，前端不依賴模型細節，可快速切換模型版本。
+
+效能預估：根據 RTX 5090 的併發能力，Qwen2.5-VL-7B-AWQ 可支援 20–30 人穩定使用，32B 則建議升級雙卡或雲端部署。
+
+🖼️ vLLM 多模態支援說明
+vLLM 推理引擎目前已支援多模態模型（如 Qwen2.5-VL、Phi-3.5-Vision），可處理圖像輸入與文字問答：
+
+圖像輸入格式：支援 multi_modal_data={"image": PIL.Image}，可處理單張或多張圖片。
+
+Prompt 處理：自動解析 <image> token，搭配 BaseMultiModalProcessor 對應圖像特徵。
+
+推理引擎整合：vLLM 可與 FastAPI 結合，支援 async API 與 streaming 回應，適合高併發場景。
+
+部署建議：使用 INT4 量化模型（AWQ）搭配 --gpu-memory-utilization 與 --max-num-seqs 調整併發能力。
+
+📌 若使用 LM Studio 或 Ollama，需確認是否支援多模態 prompt；vLLM 則建議搭配 Hugging Face Transformers 模型與 PIL 圖像處理。
 
 ---
 
