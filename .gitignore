@@ -1,5 +1,11 @@
 /.env.local
 /node_modules
+
+# Environment files
+.env
+apps/api/.env
+/data
+
 # Python cache
 apps/api/__pycache__/
 # FAISS 向量資料庫
