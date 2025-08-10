@@ -13,8 +13,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     callbacks: {
         async jwt({ token, account, profile }) {
             if (account && profile) {
-                token.lineId = (profile as { userId?: string }).userId
+                // 調試：輸出 profile 內容
+                console.log('LINE Profile:', profile)
                 
+                // LINE profile 中的 user ID 屬性名稱是 'sub'
+                token.lineId = (profile as { sub?: string }).sub
+
                 // 從FastAPI取得用戶角色
                 if (token.lineId) {
                     try {

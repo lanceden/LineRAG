@@ -33,7 +33,7 @@ export default function Home() {
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 border border-gray-200 dark:border-gray-700">
-          {session ? (
+          {session && session.user?.lineId ? (
             <div className="text-center">
               <h2 className="text-2xl font-semibold mb-6 text-green-600">
                 登入成功！
