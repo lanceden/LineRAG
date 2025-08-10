@@ -80,26 +80,29 @@ services:
     networks:
       - linerag-network
 
-  # vLLM 推理引擎
+  # vLLM 推理引擎 (可動態切換模型)
   vllm:
     image: vllm/vllm-openai:latest
     ports:
       - "8001:8000"
     command: >
-      --model ${LLM_MODEL_REPO:-Qwen/Qwen2-1.5B-Instruct}
-      --served-model-name ${LLM_MODEL_NAME:-Qwen2-1.5B-Instruct}
+      --model ${LLM_MODEL_REPO:-Qwen/Qwen2.5-VL-7B-Instruct}
+      --served-model-name ${LLM_MODEL_NAME:-qwen-2.5-vl}
       --host 0.0.0.0
       --port 8000
-      --max-model-len 2048
-      --gpu-memory-utilization 0.6
+      --max-model-len 4096
+      --gpu-memory-utilization 0.8
+      --trust-remote-code
       --disable-log-stats
     volumes:
       - model_cache:/root/.cache/huggingface
+      - ./models:/models:ro
     environment:
       - CUDA_VISIBLE_DEVICES=0
       - HF_HOME=/root/.cache/huggingface
-      - LLM_MODEL_REPO=${LLM_MODEL_REPO:-Qwen/Qwen2-1.5B-Instruct}
-      - LLM_MODEL_NAME=${LLM_MODEL_NAME:-Qwen2-1.5B-Instruct}
+      - LLM_MODEL_REPO=${LLM_MODEL_REPO:-Qwen/Qwen2.5-VL-7B-Instruct}
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME:-qwen-2.5-vl}
+      - MODEL_CONFIG_PATH=/models/config.json
     deploy:
       resources:
         reservations:
@@ -107,6 +110,12 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s  # vLLM需要較長時間載入模型
     restart: unless-stopped
     networks:
       - linerag-network
