@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>&#x74bf;&#x6069;&#x667a;&#x6167;&#x5ba2;&#x670d;&#x7cfb;&#x7d71;&#x90e8;&#x7f72;&#x898f;&#x5283;&#x6848;</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+<link href="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.css" rel="stylesheet" type="text/css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="璿恩智慧客服系統部署規劃案">璿恩智慧客服系統部署規劃案</h1>
+<h2 id="一專案背景">一、專案背景</h2>
+<p>針對企業導入 AI 智能客服系統需求，專注於單租戶深度優化架構，提供穩定的地端推理能力與資料隱私保護，支援 LINE 訊息串接、官網自訂對話框、RAG 檢索、對話記錄管理等核心功能。本系統採用單機優化設計，確保每個客戶擁有獨立且高效能的AI客服環境。</p>
+<hr>
+<h2 id="二主機架構建議">二、主機架構建議</h2>
+<h3 id="1-地端主機自建">1. 地端主機（自建）</h3>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>規格建議</th>
+<th>說明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPU</td>
+<td>RTX 5090 x1（可擴充雙卡）</td>
+<td>單卡支援 20-30 併發用戶，支援 Qwen2-7B、Yi-9B 等中型模型；如需更高併發可升級雙卡</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>* 建議可支援模型（多模態佳，中文優先，考量 RTX 5090 兼容性）：</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>* gpt-oss (20B)</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>* Qwen2.5-VL-instruct (32B)</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>* MiniCPM (7B)</td>
+</tr>
+<tr>
+<td>CPU</td>
+<td>Intel Xeon / AMD Threadripper</td>
+<td>多線程文件處理與檢索分流</td>
+</tr>
+<tr>
+<td>RAM</td>
+<td>128GB DDR5 ECC</td>
+<td>確保文件快取與模型 Loading 穩定</td>
+</tr>
+<tr>
+<td>儲存</td>
+<td>系統：2TB NVMe SSD向量：4TB SSD RAID</td>
+<td>應對 RAG 檢索、大量日誌與文件儲存</td>
+</tr>
+<tr>
+<td>作業系統</td>
+<td>Windows Server 2022（或 Ubuntu 22.04 LTS，視維運能力調整）</td>
+<td>Windows Server 對 CUDA 支援佳，並無 TCP 連線限制，適合正式對外服務使用。可搭配 LM Studio / Ollama 建置本地模型推理環境，亦可作為混合式架構的主伺服器平台。若需進一步彈性與 DevOps 自動化，仍建議日後轉移至 Ubuntu，整合容器部署與開源工具鏈（如 FastAPI、NVIDIA Container Toolkit 等）</td>
+</tr>
+<tr>
+<td>散熱</td>
+<td>水冷 / 工業塔型風冷</td>
+<td>適應高熱 GPU 長時運行</td>
+</tr>
+<tr>
+<td>網路</td>
+<td>1Gbps 固定 IP</td>
+<td>對接外部 LINE webhook 與客服管理平台</td>
+</tr>
+</tbody>
+</table>
+<h3 id="-特色">📌 特色</h3>
+<ul>
+<li>模型與 RAG 可完全私有部署，資料不出外部。</li>
+<li>預留多卡插槽，可日後升級至 2x5090、或部署獨立 embedding node。</li>
+<li>成本控制，無需長期 API Token 支出。</li>
+</ul>
+<hr>
+<h3 id="2-雲端主機租用">2. 雲端主機（租用）</h3>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>規格建議</th>
+<th>說明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPU</td>
+<td>A100 / H100（依照廠商方案）</td>
+<td>通常計費以秒為單位，需精準控流量</td>
+</tr>
+<tr>
+<td>雲平台</td>
+<td>AWS / GCP / RunPod / Lambda Labs</td>
+<td>可搭配容器化推理環境部署模型</td>
+</tr>
+<tr>
+<td>計費模式</td>
+<td>時數 / Token / 容量流量 計費</td>
+<td>價格彈性但成本累積速度快</td>
+</tr>
+<tr>
+<td>架構彈性</td>
+<td>高，適合多地佈署</td>
+<td>可做負載均衡與容錯備援</td>
+</tr>
+</tbody>
+</table>
+<h4 id="-雲端主機特色">📌 雲端主機特色</h4>
+<ul>
+<li>快速佈署，無需維護硬體。</li>
+<li>可配合 autoscaling 並行服務多客戶。</li>
+<li>適合 PoC 與短期測試階段使用。</li>
+</ul>
+<hr>
+<h2 id="三技術架構決策考量">三、技術架構決策考量</h2>
+<h3 id="-地端部署技術優勢">✅ 地端部署技術優勢</h3>
+<ul>
+<li><strong>資料隱私保護</strong>：完全本地化處理，符合金融、醫療等高隱私要求</li>
+<li><strong>效能可控</strong>：專用硬體資源，回應時間穩定可預測</li>
+<li><strong>成本透明</strong>：無使用量計費，長期運營成本固定</li>
+<li><strong>技術自主</strong>：完整技術掌控，可依需求客製化調整</li>
+</ul>
+<h3 id="️-地端部署技術要求">⚠️ 地端部署技術要求</h3>
+<ul>
+<li><strong>硬體投資</strong>：需要專業 GPU 硬體和散熱系統</li>
+<li><strong>維運能力</strong>：需要 DevOps 和系統管理專業人員</li>
+<li><strong>擴容規劃</strong>：需要預先規劃硬體擴充方案</li>
+<li><strong>備援機制</strong>：需要建立適當的備份和災難恢復機制</li>
+</ul>
+<hr>
+<h2 id="四推薦技術架構">四、推薦技術架構</h2>
+<h3 id="單租戶專用部署架構">單租戶專用部署架構</h3>
+<ol>
+<li><strong>核心推理層</strong>：地端主機作為主要 AI 推理引擎</li>
+<li><strong>資料處理層</strong>：本地向量資料庫和文檔管理</li>
+<li><strong>介面整合層</strong>：LINE Bot 和 Web Chat 統一接入</li>
+<li><strong>監控管理層</strong>：系統狀態監控和使用分析</li>
+</ol>
+<h3 id="系統整合模式">系統整合模式</h3>
+<ul>
+<li><strong>全地端模式</strong>：所有組件部署在客戶內網</li>
+<li><strong>混合整合</strong>：核心 AI 地端，外部服務雲端代理</li>
+<li><strong>容器化部署</strong>：Docker 容器化便於維護和升級</li>
+</ul>
+<hr>
+<h2 id="六gpu-併發能力與成本分析">六、GPU 併發能力與成本分析</h2>
+<h3 id="rtx-5090-vs-h100-併發性能對比保守估算">RTX 5090 vs H100 併發性能對比（保守估算）</h3>
+<table>
+<thead>
+<tr>
+<th>GPU 規格</th>
+<th>RTX 5090</th>
+<th>H100（80GB）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>VRAM</strong></td>
+<td>24GB GDDR6X</td>
+<td>80GB HBM3</td>
+</tr>
+<tr>
+<td><strong>單輪延遲</strong></td>
+<td>1.5-2.5 秒</td>
+<td>0.8-1.2 秒</td>
+</tr>
+<tr>
+<td><strong>穩定併發</strong></td>
+<td>15-20 用戶</td>
+<td>40-60 用戶</td>
+</tr>
+<tr>
+<td><strong>極限併發</strong></td>
+<td>25-30 用戶</td>
+<td>80-100 用戶</td>
+</tr>
+<tr>
+<td><strong>硬體成本</strong></td>
+<td>NT$ 100,000</td>
+<td>NT$ 1,500,000</td>
+</tr>
+<tr>
+<td><strong>每用戶成本</strong></td>
+<td>NT$ 3,500-4,500</td>
+<td>NT$ 25,000-37,500</td>
+</tr>
+<tr>
+<td><strong>適用場景</strong></td>
+<td>單租戶專用部署</td>
+<td>雲端GPU服務</td>
+</tr>
+</tbody>
+</table>
+<h4 id="註以上數字為-qwen2-7b-int4-量化版本的保守估算實際效能依模型大小量化程度硬體配置而異">註：以上數字為 Qwen2-7B INT4 量化版本的保守估算，實際效能依模型大小、量化程度、硬體配置而異</h4>
+<h3 id="技術架構考量因素">技術架構考量因素</h3>
+<p><strong>單租戶架構技術特點</strong>：</p>
+<ul>
+<li>硬體資源專用，效能穩定可預測</li>
+<li>資料物理隔離，安全性最高</li>
+<li>架構簡單，維運複雜度低</li>
+<li>可依業務需求深度客製化</li>
+</ul>
+<p><strong>技術實現重點</strong>：</p>
+<ul>
+<li>GPU 資源管理和效能優化</li>
+<li>向量資料庫的區域性部署</li>
+<li>對話狀態管理和持久化</li>
+<li>API 接口的安全性和效能</li>
+</ul>
+<h3 id="推薦部署模式">推薦部署模式</h3>
+<p><strong>單一實例專用部署</strong>：</p>
+<ul>
+<li>每個客戶獨立部署一套完整系統</li>
+<li>完全的資料隔離和訪問控制</li>
+<li>獨立的效能調優和系統配置</li>
+<li>簡化的維運和故障排除</li>
+</ul>
+<hr>
+<h2 id="七技術要求與環境配置">七、技術要求與環境配置</h2>
+<h3 id="-系統環境需求">✅ 系統環境需求</h3>
+<p><strong>作業系統支援</strong>：</p>
+<ul>
+<li>Windows Server 2022 / Ubuntu 22.04 LTS</li>
+<li>Docker 支援（可選）</li>
+<li>Python 3.10+ 執行環境</li>
+</ul>
+<p><strong>網路與安全配置</strong>：</p>
+<ul>
+<li>固定 IP 位址（對接 LINE webhook）</li>
+<li>SSL 憑證配置</li>
+<li>防火牆與埠號管理</li>
+</ul>
+<p><strong>效能監控工具</strong>：</p>
+<ul>
+<li>GPU 使用率監控</li>
+<li>系統資源管理</li>
+<li>推理延遲追蹤</li>
+</ul>
+<hr>
+<h2 id="八部署與維運指南">八、部署與維運指南</h2>
+<h3 id="-推薦部署步驟">✅ 推薦部署步驟</h3>
+<ol>
+<li><strong>硬體準備</strong>：按照建議規格配置主機和GPU</li>
+<li><strong>環境設定</strong>：安裝必要的系統套件和依賴項目</li>
+<li><strong>模型部署</strong>：配置 vLLM 和向量資料庫</li>
+<li><strong>服務啟動</strong>：運行 FastAPI 後端和 Next.js 前端</li>
+<li><strong>測試驗證</strong>：進行完整功能測試和效能評估</li>
+</ol>
+<h3 id="-維運重點注意事項">✅ 維運重點注意事項</h3>
+<ul>
+<li><strong>定期備份</strong>：資料庫和向量檔案定期備份</li>
+<li><strong>模型更新</strong>：根據業務需求更新AI模型</li>
+<li><strong>效能監控</strong>：持續監控系統資源使用情況</li>
+<li><strong>日誌管理</strong>：保存系統運行和對話日誌</li>
+<li><strong>安全更新</strong>：定期更新系統套件和安全補丁</li>
+</ul>
+
+            <script async src="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.js"></script>
+            
+        </body>
+        </html>
