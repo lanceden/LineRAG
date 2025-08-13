@@ -49,9 +49,9 @@ class UserService:
                 "name": name,
                 "email": email or "",
                 "role": role,  # admin | cs
-                "is_active": True,
-                "created_at": int(time.time()),
-                "updated_at": int(time.time()),
+                "is_active": "True",
+                "created_at": str(int(time.time())),
+                "updated_at": str(int(time.time())),
                 "created_by": created_by
             }
             
@@ -95,7 +95,7 @@ class UserService:
             # 更新角色
             await self.redis_client.hset(f"user:{line_id}", mapping={
                 "role": new_role,
-                "updated_at": int(time.time())
+                "updated_at": str(int(time.time()))
             })
             
             # 更新角色索引

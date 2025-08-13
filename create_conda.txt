@@ -5,4 +5,39 @@ pip install -r requirements.txt
 run server
 uvicorn main:app --reload --port 8000
 
+-- pdf轉vector
 python ingest.py
+
+-- 啟用line webhook
+-- https://developers.line.biz/console/channel/2007872165/messaging-api
+npm install -g localtunnel
+lt --port 8000
+
+
+ 使用方式：
+  # 開發環境
+  cp .env.development .env
+  docker-compose up -d
+
+  # 生產環境
+  cp .env.production .env
+  docker-compose up -d
+
+  API 服務會透過 load_dotenv() 自動載入環境變數，Docker Compose 會將最外層 .env    
+  的變數傳遞給容器，避免重複配置的問題。
+
+   現在重新啟動：
+  # Ctrl+C 停止目前程序
+  # 重新啟動
+  python main.py
+
+  現在應該會：
+  1. ✅ Debug server啟動在5678端口
+  2. ✅ FastAPI服務啟動在8000端口
+  3. ✅ 可以正常存取 http://localhost:8000/health
+  4. ✅ 可以在VSCode中attach debug
+
+  使用方式：
+  1. 服務正常運行在8000端口
+  2. 需要debug時，在VSCode按F5選擇 "🔗 Attach to FastAPI"
+  3. 設斷點進行debug

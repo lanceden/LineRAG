@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Core utilities
 from app.core.logging import setup_logging
@@ -18,6 +19,8 @@ from app.routers.ingest import router as ingest_router
 from app.routers.image import router as image_router
 from app.routers.webhook import router as webhook_router
 from app.routers.users import router as users_router
+from app.routers.admin import router as admin_router
+from app.routers.rag import router as rag_router
 
 
 @asynccontextmanager
@@ -54,6 +57,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include modular routers
 app.include_router(health_router)
@@ -62,6 +73,8 @@ app.include_router(ingest_router)
 app.include_router(image_router)
 app.include_router(webhook_router)
 app.include_router(users_router)
+app.include_router(admin_router)
+app.include_router(rag_router)
 
 
 # 支援直接運行調試
@@ -77,9 +90,9 @@ if __name__ == "__main__":
         import debugpy
 
         debugpy.listen(("0.0.0.0", 5678))
-        print("🔍 Debug server listening on port 5678")
-        print("💡 在VSCode中選擇 '🔗 Attach to FastAPI' 進行debug")
+        print("Debug server listening on port 5678")
+        print("In VSCode choose 'Attach to FastAPI' to debug")
         debugpy.wait_for_client()  # 等待 debugger 連接
 
-    print("🚀 直接運行 FastAPI (Debug 模式)")
+    print("Starting FastAPI (Debug Mode)")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="debug")

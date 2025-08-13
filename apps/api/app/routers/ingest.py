@@ -10,6 +10,7 @@ import redis.asyncio as redis
 # Load .env
 from app.core import env
 from app.services.vectorstore import get_vectorstore_service
+from app.services.smart_tagging import get_smart_tagging_service
 from langchain.schema import Document
 from langchain_community.document_loaders import (
     PyMuPDFLoader,
@@ -58,7 +59,7 @@ async def get_task_status(task_id: str) -> Dict[str, Any]:
         await redis_client.close()
 
 
-def add_document_to_vectorstore(
+async def add_document_to_vectorstore(
     file_path: str, original_name: str, use_ocr: bool = False
 ) -> str:
     """
@@ -123,6 +124,23 @@ def add_document_to_vectorstore(
     # 分塊前記錄共用欄位
     upload_time = time.time()
 
+    # 方案A功能：智能標籤分析
+    document_analysis = None
+    try:
+        # 整合所有文檔內容進行分析
+        full_content = "\n\n".join([doc.page_content for doc in documents])
+        
+        # 使用智能標籤服務分析文檔
+        tagging_service = get_smart_tagging_service()
+        document_analysis = await tagging_service.analyze_document(
+            content=full_content,
+            filename=original_name
+        )
+        print(f"Document analysis completed for {original_name}")
+    except Exception as e:
+        print(f"Smart tagging analysis failed for {original_name}: {e}")
+        # 分析失敗時繼續處理，不阻斷上傳流程
+
     # 分塊
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=int(os.getenv("CHUNK_SIZE", "1000")),
@@ -139,6 +157,20 @@ def add_document_to_vectorstore(
         chunk.metadata["upload_time"] = upload_time
         chunk.metadata["chunk_count"] = total_chunks
         chunk.metadata["processing_method"] = "ocr" if use_ocr else "traditional"
+        
+        # 方案A功能：添加智能標籤分析結果
+        if document_analysis:
+            classification = document_analysis.get("classification", {})
+            chunk.metadata["department"] = classification.get("department", "通用")
+            chunk.metadata["doc_type"] = classification.get("doc_type", "其他")
+            chunk.metadata["product_line"] = classification.get("product_line", "通用服務")
+            chunk.metadata["priority"] = classification.get("priority", "中")
+            chunk.metadata["audience"] = classification.get("audience", "員工")
+            chunk.metadata["tags"] = document_analysis.get("tags", [])
+            chunk.metadata["summary"] = document_analysis.get("summary", "")
+            chunk.metadata["entities"] = document_analysis.get("entities", {})
+            chunk.metadata["confidence"] = classification.get("confidence", 0.5)
+            chunk.metadata["document_id"] = doc_id  # 為檢索服務使用
 
     # 寫入向量庫
     vs.vectordb.add_documents(chunks)
@@ -147,7 +179,7 @@ def add_document_to_vectorstore(
 
 
 @router.post("/ingest")
-def ingest_document(request: IngestRequest):
+async def ingest_document(request: IngestRequest):
     """
     同步處理文件並將其添加到向量儲存。
     接收 IngestRequest 物件，其中包含文件路徑、原始檔名和是否使用 OCR 的選項。
@@ -160,7 +192,7 @@ def ingest_document(request: IngestRequest):
     if file_extension not in allowed_extensions:
         raise HTTPException(status_code=400, detail="不支援的文件格式")
 
-    doc_id = add_document_to_vectorstore(
+    doc_id = await add_document_to_vectorstore(
         request.file_path, request.original_name, request.use_ocr
     )
     return {
@@ -186,7 +218,7 @@ async def ingest_document_async(request: IngestRequest, background: BackgroundTa
     async def _run():
         await set_task_status(task_id, {"status": "processing"})
         try:
-            doc_id = add_document_to_vectorstore(
+            doc_id = await add_document_to_vectorstore(
                 request.file_path, request.original_name, request.use_ocr
             )
             await set_task_status(
@@ -256,6 +288,15 @@ def list_documents():
                     "filename": meta.get("filename"),
                     "upload_time": meta.get("upload_time"),
                     "chunk_count": meta.get("chunk_count"),
+                    # 方案A功能：顯示智能分析結果
+                    "department": meta.get("department"),
+                    "doc_type": meta.get("doc_type"),
+                    "product_line": meta.get("product_line"),
+                    "priority": meta.get("priority"),
+                    "audience": meta.get("audience"),
+                    "tags": meta.get("tags", []),
+                    "summary": meta.get("summary"),
+                    "confidence": meta.get("confidence"),
                 }
 
     documents = []
@@ -269,6 +310,15 @@ def list_documents():
                 "filename": d.get("filename"),
                 "upload_date": upload_date,
                 "chunk_count": d.get("chunk_count", 0),
+                # 方案A功能：包含智能分析結果
+                "department": d.get("department"),
+                "doc_type": d.get("doc_type"),
+                "product_line": d.get("product_line"),
+                "priority": d.get("priority"),
+                "audience": d.get("audience"),
+                "tags": d.get("tags", []),
+                "summary": d.get("summary"),
+                "confidence": d.get("confidence"),
             }
         )
 
