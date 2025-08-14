@@ -1,9 +1,19 @@
+創建新的 Conda 環境：
 conda create -n line-rag-api python=3.10 -y
 conda activate line-rag-api
 pip install -r requirements.txt
 
+移除舊的 Conda 環境：
+conda deactivate
+conda env remove -n line-rag-api
+
 run server
 uvicorn main:app --reload --port 8000
+
+http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/api/openapi.json
+
+
 
 -- pdf轉vector
 python ingest.py

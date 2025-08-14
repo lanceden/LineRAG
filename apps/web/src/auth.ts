@@ -1,65 +1,87 @@
 import NextAuth from 'next-auth'
-import Line from 'next-auth/providers/line'
-import './types/auth' // 匯入類型擴展
+import CredentialsProvider from 'next-auth/providers/credentials'
+import './types/auth'
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-    secret: process.env.NEXTAUTH_SECRET,
-    providers: [
-        Line({
-            clientId: process.env.LINE_CLIENT_ID!,
-            clientSecret: process.env.LINE_CLIENT_SECRET!,
-        }),
-    ],
-    callbacks: {
-        async jwt({ token, account, profile }) {
-            if (account && profile) {
-                // 調試：輸出 profile 內容
-                console.log('LINE Profile:', profile)
-                
-                // LINE profile 中的 user ID 屬性名稱是 'sub'
-                token.lineId = (profile as { sub?: string }).sub
+  secret: process.env.NEXTAUTH_SECRET,
+  providers: [
+    CredentialsProvider({
+      name: "credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          return null
+        }
 
-                // 從FastAPI取得用戶角色
-                if (token.lineId) {
-                    try {
-                        const apiUrl = process.env.PYTHON_API_URL || 'http://localhost:8000'
-                        const response = await fetch(`${apiUrl}/users/role/${token.lineId}`)
-                        if (response.ok) {
-                            const userData = await response.json()
-                            token.role = userData.role || 'cs'
-                            token.isActive = userData.is_active ?? true
-                        } else {
-                            // API呼叫失敗，設定預設值
-                            token.role = 'cs'
-                            token.isActive = true
-                        }
-                    } catch (error) {
-                        console.error('Failed to fetch user role:', error)
-                        token.role = 'cs'
-                        token.isActive = true
-                    }
-                }
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+          const response = await fetch(`${apiUrl}/api/system-users/login`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              email: credentials.email,
+              password: credentials.password,
+            }),
+          })
+
+          if (response.ok) {
+            const loginData = await response.json()
+            const userData = loginData.user
+            return {
+              id: userData.id,
+              email: userData.email,
+              name: userData.full_name,
+              role: userData.role,
+              isActive: userData.is_active,
+              companies: loginData.accessible_companies || [],
+              accessToken: loginData.access_token, // 保存後端的 access_token
             }
-            return token
-        },
-        async session({ session, token }) {
-            if (session.user) {
-                session.user.lineId = token.lineId as string
-                session.user.role = token.role as string
-                session.user.isActive = token.isActive as boolean
-            }
-            return session
-        },
-        async redirect({ url, baseUrl }) {
-            // 如果是從登入頁面來的，預設導向到 /me
-            if (url.startsWith(baseUrl)) {
-                return url
-            }
-            // 如果沒有指定 URL，預設導向到 /me
-            return `${baseUrl}/me`
-        },
+          }
+        } catch (error) {
+          console.error('Authentication error:', error)
+        }
+        
+        return null
+      }
+    })
+  ],
+  session: { strategy: "jwt" },
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.role = user.role
+        token.isActive = user.isActive
+        token.companies = user.companies
+        token.accessToken = user.accessToken // 保存 access_token 到 JWT
+      }
+      return token
     },
-    pages: {
-        signIn: '/',
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.role = token.role as string
+        session.user.isActive = token.isActive as boolean
+        session.user.companies = token.companies as Array<{
+          id: string
+          name: string
+          is_active: boolean
+        }>
+        session.user.accessToken = token.accessToken as string // 添加到 session
+      }
+      return session
     },
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith(baseUrl)) {
+        return url
+      }
+      return `${baseUrl}/multitenantrag/admin`
+    },
+  },
+  pages: {
+    signIn: '/multitenantrag/auth/login',
+  },
 })

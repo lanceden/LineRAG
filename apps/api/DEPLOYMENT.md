@@ -1,4 +1,13 @@
-# FastAPI 部署指南
+# LineRAG Multi-Tenant API 部署指南
+
+## 系統架構說明
+
+LineRAG v2.0 採用多租戶架構，支援多家公司共用一套系統：
+
+- **PostgreSQL**：存儲公司資料、用戶資訊、文檔元資料
+- **Qdrant**：向量資料庫（按公司隔離）
+- **Redis**：會話管理和快取
+- **RAG-Anything**：多模態文檔處理框架
 
 ## 本地開發環境
 
@@ -9,31 +18,67 @@ cd apps/api
 pip install -r requirements.txt
 ```
 
-### 2. 環境變數設定
+### 2. 安裝並啟動 PostgreSQL
+
+#### Windows (使用 PostgreSQL 安裝程式)
+
+```bash
+# 下載並安裝 PostgreSQL 15+
+# 建立資料庫和用戶
+psql -U postgres
+CREATE DATABASE linerag_multitenant;
+CREATE USER linerag WITH PASSWORD 'linerag';
+GRANT ALL PRIVILEGES ON DATABASE linerag_multitenant TO linerag;
+```
+
+#### 使用 Docker
+
+```bash
+docker run --name postgres-linerag \
+  -e POSTGRES_DB=linerag_multitenant \
+  -e POSTGRES_USER=linerag \
+  -e POSTGRES_PASSWORD=linerag \
+  -p 5432:5432 \
+  -d postgres:15
+```
+
+### 3. 環境變數設定
 
 創建 `.env` 檔案：
 
 ```bash
-# OpenAI / vLLM 設定
-OPENAI_API_BASE=http://localhost:8001/v1
-OPENAI_API_KEY=not-needed
-LLM_MODEL_NAME=TheBloke/Qwen2-7B-Chat-AWQ
+# OpenAI API 配置
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_BASE_URL=https://api.openai.com/v1
 
-# 向量資料庫設定
-EMBEDDING_MODEL_NAME=BAAI/bge-m3
-USE_LOCAL_QDRANT=true
-QDRANT_PATH=./local_qdrant
-COLLECTION_NAME=documents
+# PostgreSQL 多租戶資料庫
+DATABASE_URL=postgresql://linerag:linerag@localhost:5432/linerag_multitenant
 
-# LINE Bot 設定（可選）
-LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
-LINE_CHANNEL_SECRET=your_line_channel_secret
+# RAG-Anything 配置
+RAG_WORKING_DIR=./rag_storage
+RAG_PARSER=mineru
+RAG_PARSE_METHOD=auto
 
-# 檔案上傳設定
-UPLOAD_IMAGE_DIR=./uploads/images
+# Redis 配置
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+
+# 系統管理員設定（LINE ID）
+ADMIN_LINE_IDS=your_line_admin_id_1,your_line_admin_id_2
+
+# 調試模式
+DEBUG=1
 ```
 
-### 3. 啟動開發伺服器
+### 4. 初始化資料庫
+
+```bash
+# 建立資料表和範例資料
+python init_db.py
+```
+
+### 5. 啟動開發伺服器
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -149,7 +194,7 @@ services:
 gcloud builds submit --tag gcr.io/PROJECT-ID/linerag-api
 ```
 
-3. 部署到 Cloud Run：
+1. 部署到 Cloud Run：
 
 ```bash
 gcloud run deploy --image gcr.io/PROJECT-ID/linerag-api --platform managed

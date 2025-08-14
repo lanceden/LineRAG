@@ -1,10 +1,12 @@
 import os
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 from dotenv import load_dotenv
 
-from app.services.vectorstore import get_vectorstore_service
-from app.services.multimodal_service import get_multimodal_service
-from app.services.llm import get_llm_client
+from app.core.database import get_db
+from app.services.rag_anything import get_rag_service
+from app.services.multitenant_rag import get_multitenant_rag_service
 
 load_dotenv()
 
@@ -17,41 +19,44 @@ def read_root():
     """
     根目錄路由，返回 API 運行狀態。
     """
-    return {"message": "LineRAG API is running", "status": "ok"}
+    return {"message": "LineRAG API with RAG-Anything is running", "status": "ok"}
 
 
 @router.get("/health")
-def health_check():
+async def health_check(db: Session = Depends(get_db)):
     """
     健康檢查路由。
-    檢查向量儲存、檢索器、多模態服務和 LLM 客戶端的狀態。
-    如果向量儲存和檢索器可用，還會嘗試檢索測試文件以檢查數據。
+    檢查 RAG-Anything 服務和數據庫連接狀態。
     """
-    vs = get_vectorstore_service()
-    ms = get_multimodal_service()
-    llm = get_llm_client()
+    rag_service = get_rag_service()
+    multitenant_rag = get_multitenant_rag_service()
+
+    # 測試數據庫連接
+    db_status = "ok"
+    try:
+        # 簡單的數據庫查詢來測試連接
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"error: {str(e)}"
 
     status = {
         "api": "ok",
-        "vectordb": "ok" if vs.vectordb is not None else "error",
-        "retriever": "ok" if vs.retriever is not None else "error",
-        "mode": (
-            "local"
-            if os.getenv("USE_LOCAL_QDRANT", "true").lower() in {"1", "true", "yes"}
-            else "server"
-        ),
-        "collection": os.getenv("COLLECTION_NAME", "documents"),
-        "multimodal": "ok" if ms is not None else "error",
-        "llm": "ok" if llm is not None else "error",
+        "rag_anything": rag_service.get_status(),
+        "multitenant_rag": "ok",
+        "database": db_status,
+        "framework": "RAG-Anything + PostgreSQL Multi-Tenant",
+        "version": "2.0.0",
     }
 
-    if vs.retriever is not None:
+    # 測試 RAG-Anything 服務
+    if rag_service.initialized:
         try:
-            test_docs = vs.retriever.get_relevant_documents("測試", k=1)
-            status["documents_count"] = len(test_docs)
-            status["has_data"] = len(test_docs) > 0
+            # 簡單的測試查詢
+            test_result = await rag_service.query_text("測試", mode="naive")
+            status["test_query"] = "ok" if test_result else "no_data"
         except Exception as e:
-            status["vectordb"] = "error"
-            status["error"] = str(e)
+            status["test_query"] = f"error: {str(e)}"
+    else:
+        status["test_query"] = "service_not_initialized"
 
     return status

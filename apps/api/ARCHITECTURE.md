@@ -1,236 +1,576 @@
-# LineRAG API 架構說明
+# LineRAG API 架構說明 v2.0 - RAG-Anything 多租戶版本
 
-這份文件說明目前 LineRAG/apps/api 的服務架構、資料流與各模組職責，協助你快速理解與維護。
-
----
-
-## 為什麼要重構
-
-原本 `main.py` 將「設定、初始化、路由、業務邏輯、外部服務呼叫」混在一起：
-
-- 測試困難、耦合度高、職責不清
-- 設定硬編碼、無法輕易換環境
-- 全域狀態過多，不易維護
-
-重構後的目標：
-
-- 清楚的分層：設定/日誌、服務、路由、（可選）資料存取
-- 避免全域狀態，集中初始化與依賴注入
-- 統一配置來源（環境變數），易於部署與擴充
+本文件說明 LineRAG API v2.0 基於 RAG-Anything 框架的多租戶架構設計。
 
 ---
 
-## 高層次概觀
+## 🏗️ 多租戶系統架構概覽
+
+LineRAG API v2.0 採用完整的多租戶架構，支援多家公司共用一套系統：
 
 ```bash
-   ┌───────────────┐    ┌────────────────────┐
-   │   Routers     │──▶ │     Services       │ ──▶ 外部系統
-   │ (FastAPI)     │    │ (VectorStore/LLM/  │     - Qdrant (向量庫)
-   │               │    │  RAG/Multimodal)   │     - vLLM/OpenAI (LLM)
-   └──────┬────────┘    └───────────┬────────┘     - File System / S3（上傳）
-          │                         │
-          ▼                         ▼
-     app/core                 app/core/logging
-   （設定/環境）                  （日誌）
+┌─────────────────────────────────────────────────────────────────┐
+│                    LineRAG Multi-Tenant API v2.0               │
+├─────────────────────────────────────────────────────────────────┤
+│                      FastAPI Application                       │
+├─────────────────────────────────────────────────────────────────┤
+│    Routers: health | ask | ingest | webhook | users | admin    │
+├─────────────────────────────────────────────────────────────────┤
+│                         Services                               │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐  │
+│  │ MultiTenant RAG  │  │ MultiTenant User │  │   Audit Log  │  │
+│  │   Service        │  │    Service       │  │   Service    │  │
+│  └──────────────────┘  └──────────────────┘  └──────────────┘  │
+├─────────────────────────────────────────────────────────────────┤
+│                     Data Storage Layer                         │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐  │
+│  │   PostgreSQL     │  │     Qdrant       │  │     Redis    │  │
+│  │ (Multi-Tenant)   │  │ (Per Company)    │  │ (Sessions)   │  │
+│  └──────────────────┘  └──────────────────┘  └──────────────┘  │
+├─────────────────────────────────────────────────────────────────┤
+│                    External Services                           │
+│  ┌──────────────────┐  ┌──────────────────┐                    │
+│  │   OpenAI API     │  │  RAG-Anything    │                    │
+│  │   (GPT-4o)       │  │   Framework      │                    │
+│  └──────────────────┘  └──────────────────┘                    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 目錄結構（重點）
+## 🔄 多租戶架構重構說明
+
+### 為什麼採用多租戶架構？
+
+**業務需求：**
+
+- 一套系統支援多家公司共用
+- 各公司資料完全隔離
+- 統一管理後台降低維運成本
+- 彈性的訂閱方案和配額管理
+
+**技術優勢：**
+
+- 資源共享，降低基礎設施成本
+- 統一升級和維護
+- 橫向擴展能力
+- 標準化的多公司管理流程
+
+**RAG-Anything 框架優勢：**
+
+- 統一的多模態 RAG 框架
+- 支援複雜文檔格式（PDF、Office、圖片、表格、公式）
+- 內建 MinerU 解析器，提供最佳的文檔處理品質
+- 按公司隔離的工作目錄設計
+
+---
+
+## 📁 多租戶目錄結構
 
 ```bash
 LineRAG/apps/api/
-├─ main.py                         # FastAPI 入口：啟動初始化 + 掛載 routers
+├─ main.py                         # FastAPI 入口，多租戶初始化
+├─ init_db.py                      # 資料庫初始化腳本
 ├─ ARCHITECTURE.md                 # 本文件
+├─ requirements.txt                # 包含 PostgreSQL、SQLAlchemy 等依賴
+├─ bak/                           # 舊架構的備份文件
 └─ app/
    ├─ core/
-   │  ├─ config.py                 # 設定集中：環境變數/預設值
-   │  └─ logging.py                # 統一 logging 設定
+   │  ├─ env.py                   # 環境變數配置
+   │  ├─ logging.py               # 統一日誌配置  
+   │  └─ database.py              # PostgreSQL 連接管理
+   ├─ models/                     # 多租戶資料模型
+   │  ├─ __init__.py              # 模型匯出
+   │  ├─ company.py               # 公司/租戶模型
+   │  ├─ user.py                  # 用戶模型（跨公司）
+   │  ├─ document.py              # 文檔元資料模型
+   │  └─ audit.py                 # 審計日誌模型
    ├─ schemas/
-   │  ├─ ask.py                    # AskRequest / Message 等 Pydantic 模型
-   │  ├─ ingest.py                 # IngestRequest
-   │  └─ image.py                  # ImageQuestionRequest
+   │  ├─ ask.py                   # 問答請求/回應模型
+   │  ├─ ingest.py                # 文檔上傳模型
+   │  └─ user.py                  # 用戶相關模型
    ├─ services/
-   │  ├─ llm.py                    # LLM 客戶端（vLLM/OpenAI 兼容）
-   │  ├─ vectorstore.py            # Embeddings + Qdrant 初始化與存取
-   │  ├─ rag.py                    # 檢索 + 提示詞組裝 + 生成
-   │  ├─ multimodal_service.py     # 多模態處理（圖像理解/OCR）
-   │  └─ document_processor.py     # PDF/Word -> 圖片 -> OCR
+   │  ├─ rag_anything.py          # 基礎 RAG-Anything 服務
+   │  ├─ multitenant_rag.py       # 多租戶 RAG 服務管理器
+   │  └─ multitenant_user.py      # 多租戶用戶管理服務
    ├─ routers/
-   │  ├─ health.py                 # 根路由與健康檢查
-   │  ├─ ask.py                    # /ask（RAG 問答）
-   │  ├─ ingest.py                 # /ingest（同步）、/ingest-async（背景任務）、/documents、刪除
-   │  ├─ image.py                  # /ask-image、/ocr-extract、/upload-image
-   │  └─ webhook.py                # LINE webhook（含簽名驗證）
-   └─ repositories/                #（目前保留，不再使用 doc_index.json）
+   │  ├─ health.py                # 系統健康檢查
+   │  ├─ ask.py                   # 問答API（支援多租戶）
+   │  ├─ ingest.py                # 文檔上傳和處理（按公司隔離）
+   │  ├─ webhook.py               # LINE webhook（多公司路由）
+   │  ├─ users.py                 # 用戶管理
+   │  └─ admin.py                 # 管理功能
+   └─ repositories/
+      └─ document_index.py         # 文檔索引管理
 ```
 
 ---
 
-## 啟動流程（lifecycle）
+## 🗄️ 多租戶資料模型設計
 
-- `main.py` 啟動時：
-  - 初始化 logging
-  - 在 `startup` 事件初始化 VectorStore（Embeddings + Qdrant 連線）
-  - 掛載各個 router
-- LLM 客戶端（`app/services/llm.py`）在載入時設定 API Base/Key
-- 多模態服務（`app/services/multimodal_service.py`）延遲載入模型，第一次使用才載入
+### 核心資料表
 
----
+#### 1. Company（公司/租戶）
 
-## 設定（環境變數）
+```python
+class Company(Base):
+    id = Integer (Primary Key)
+    name = String(255)              # 公司名稱
+    code = String(50)               # 公司代碼 (唯一)
+    
+    # LINE Channel 設定
+    line_channel_token = Text       # LINE Channel Access Token
+    line_channel_secret = String    # LINE Channel Secret
+    line_bot_enabled = Boolean      # LINE 機器人是否啟用
+    
+    # 訂閱設定
+    subscription_plan = String      # 訂閱方案 (standard/premium)
+    max_documents = Integer         # 最大文檔數量
+    max_queries_per_month = Integer # 每月查詢上限
+    
+    # RAG 設定
+    rag_working_dir = String        # RAG 工作目錄
+    storage_quota_gb = Integer      # 儲存配額
+    
+    # 狀態管理
+    is_active = Boolean
+    created_at = DateTime
+    updated_at = DateTime
+```
 
-由 `app/core/config.py` 管理，可由環境變數覆蓋，常用鍵值：
+#### 2. User（用戶）
 
-- OpenAI / vLLM
-  - `OPENAI_API_BASE`（預設 `http://localhost:8001/v1`）
-  - `OPENAI_API_KEY`（預設 `not-needed`）
-  - `LLM_MODEL_NAME`（預設 `TheBloke/Qwen2-7B-Chat-AWQ`）
-- Embeddings / Qdrant
-  - `EMBEDDING_MODEL_NAME`（預設 `BAAI/bge-m3`）
-  - `USE_LOCAL_QDRANT`（預設 `true`）
-  - `QDRANT_PATH`（預設 `./local_qdrant`）或 `QDRANT_HOST`/`QDRANT_PORT`
-  - `COLLECTION_NAME`（預設 `documents`）
-- LINE
-  - `LINE_CHANNEL_ACCESS_TOKEN`、`LINE_CHANNEL_SECRET`
-- 上傳
-  - `UPLOAD_IMAGE_DIR`（預設 `./uploads/images`）
+```python
+class User(Base):
+    id = Integer (Primary Key)
+    company_id = ForeignKey(Company) # 所屬公司
+    
+    # LINE 用戶資訊
+    line_id = String(255)           # LINE 用戶ID
+    line_display_name = String      # LINE 顯示名稱
+    
+    # 系統用戶資訊
+    name = String(255)              # 用戶姓名
+    email = String(255)             # 電子郵件
+    role = String(50)               # 角色: admin, cs, user
+    
+    # 統計資訊
+    total_queries = Integer         # 總查詢次數
+    monthly_queries = Integer       # 當月查詢次數
+    last_login = DateTime           # 最後登入時間
+```
 
----
+#### 3. DocumentMetadata（文檔元資料）
 
-## 服務層職責（Services）
+```python
+class DocumentMetadata(Base):
+    id = Integer (Primary Key)
+    company_id = ForeignKey(Company) # 所屬公司
+    
+    # 文檔基本資訊
+    document_id = String(255)       # RAG系統中的文檔ID
+    original_filename = String      # 原始檔名
+    file_path = Text               # 檔案路徑
+    file_size = BigInteger         # 檔案大小
+    mime_type = String             # 檔案類型
+    
+    # 處理資訊
+    processing_method = String      # 處理方法: auto, ocr
+    processing_status = String      # 處理狀態
+    chunk_count = Integer          # 分塊數量
+    
+    # 內容統計
+    has_images = Boolean           # 是否包含圖片
+    has_tables = Boolean           # 是否包含表格
+    has_formulas = Boolean         # 是否包含公式
+```
 
-- `vectorstore.py`
-  - 建立 `HuggingFaceEmbeddings`
-  - 依設定連線本地或遠端 Qdrant
-  - 封裝 `langchain_community.vectorstores.Qdrant` 並提供 `retriever`
-- `llm.py`
-  - 統一與 OpenAI/vLLM 相容的 `chat(messages)` 介面
-- `rag.py`
-  - `build_prompt()`：整理對話訊息
-  - `build_rag_prompt()`：把檢索到的段落組成提示詞
-  - `generate_answer_from_messages()`：檢索 + 生成的整合流程
-- `multimodal_service.py`
-  - 多模態模型載入（延遲）
-  - `process_image_with_text()`、`extract_text_from_image()`、`analyze_equipment_image()`
-- `document_processor.py`
-  - `pdf_to_images()`、`word_to_images()`：將 PDF/Word 轉為圖片
-  - `process_document_with_ocr()`：整體管線（圖片 → OCR → 文本）
+#### 4. AuditLog（審計日誌）
 
----
-
-## 路由職責（Routers）
-
-- `health.py`
-  - `GET /`：存活訊息
-  - `GET /health`：回報向量庫/檢索/多模態/LLM 狀態，並嘗試小型檢索以驗證可用性
-- `ask.py`
-  - `POST /ask`：呼叫 RAG 流程 → 回答文字
-- `ingest.py`
-  - `POST /ingest`：同步處理文件 → 切塊 → 寫入 Qdrant
-  - `POST /ingest-async`：提交背景任務，立即回傳 `task_id`
-  - `GET /tasks/{task_id}`：查任務狀態（demo 為記憶體暫存，商用請使用佇列/Redis）
-  - `GET /documents`：從 Qdrant 的 payload.metadata 彙整文件清單（單一資料來源，不再使用 JSON）
-  - `DELETE /documents/{doc_id}`：以 Qdrant Filter(metadata.doc_id) 刪除
-- `image.py`
-  - `POST /ask-image`：圖片問答（多模態）
-  - `POST /ocr-extract`：從圖片擷取文字（多模態）
-  - `POST /upload-image`：儲存圖片（目錄可設定）
-- `webhook.py`
-  - `POST /webhook`：LINE 回呼，包含 `X-Line-Signature` 驗簽
-
----
-
-## 資料流與邏輯
-
-### 1) Ingest（同步/非同步）
-
-1. 驗證檔案存在與格式（pdf/doc/docx）
-2. 擷取內容
-   - 傳統：`PyMuPDFLoader`（PDF）或 `Docx2txt/UnstructuredWordDocumentLoader`（Word）
-   - OCR：`document_processor` 先轉圖片，再以多模態模型提取文字
-3. 分塊：`RecursiveCharacterTextSplitter(chunk_size=1000, overlap=200)`
-4. 寫入 Qdrant：
-   - 每個 chunk 帶有 metadata：
-     ```json
-     {
-       "doc_id": "<uuid>",
-       "filename": "原始文件名",
-       "upload_time": 1730000000,
-       "chunk_count": 24,
-       "processing_method": "ocr|traditional",
-       "page_number": 1
-     }
-     ```
-5. 列表與刪除：
-   - `/documents` 透過 scroll 彙整 `doc_id` → 文件清單
-   - 刪除則以 Filter(metadata.doc_id) 直接刪除 Qdrant points
-
-> 建議：為 `metadata.doc_id`、`metadata.filename` 建立 payload 索引；資料量大時改為分頁 + 條件查詢。
-
-### 2) RAG /ask
-
-1. `AskRequest` → `build_prompt()` 抽取用戶訊息
-2. `retriever.get_relevant_documents()` 檢索相關段落
-3. `build_rag_prompt()` 將段落嵌入提示詞
-4. `llm.chat()` 生成答案
-
-### 3) 多模態 /ask-image, /ocr-extract
-
-- 延遲載入多模態模型（第一次呼叫才載入）
-- 根據 prompt（OCR 或器材分析）產生回覆
+```python
+class AuditLog(Base):
+    id = Integer (Primary Key)
+    company_id = ForeignKey(Company) # 所屬公司
+    user_id = ForeignKey(User)       # 操作用戶
+    
+    # 操作資訊
+    action = String(100)            # 操作類型
+    resource_type = String(50)      # 資源類型
+    resource_id = String(255)       # 資源ID
+    
+    # 請求資訊
+    endpoint = String(255)          # API端點
+    ip_address = String(45)         # IP地址
+    user_agent = Text              # 用戶代理
+    
+    # 結果資訊
+    status = String(20)            # 操作狀態
+    response_time_ms = Integer     # 回應時間
+    timestamp = DateTime           # 操作時間
+```
 
 ---
 
-## 日誌與健康檢查
+## 🔧 多租戶服務層架構
 
-- 日誌：
-  - `app/core/logging.py` 設定全域 logging（可由 `LOG_LEVEL` 控制）
-  - services 以命名 logger 記錄（`linerag.*`）
-- 健康：
-  - `GET /health` 報告向量庫/檢索/多模態/LLM 等狀態
-  - 可再拆 `readiness` 與 `liveness` 以對接容器/編排系統
+### 1. MultiTenantRAGService
+
+```python
+class MultiTenantRAGService:
+    """多租戶 RAG 服務管理器"""
+    
+    async def get_company_rag_service(company_id: int) -> RAGAnythingService:
+        """取得指定公司的 RAG 服務實例"""
+        
+    async def get_company_by_line_channel(channel_token: str) -> Company:
+        """根據 LINE Channel Token 找到對應的公司"""
+        
+    async def cleanup_company_service(company_id: int):
+        """清理指定公司的 RAG 服務"""
+```
+
+**核心功能：**
+
+- 按公司 ID 管理獨立的 RAG-Anything 實例
+- 自動建立公司專用的工作目錄
+- 快取服務實例，提升效能
+- 支援服務清理和資源管理
+
+### 2. MultiTenantUserService
+
+```python
+class MultiTenantUserService:
+    """多租戶用戶管理服務"""
+    
+    async def get_user_by_line_id(line_id: str, company_id: int) -> User:
+        """根據 LINE ID 取得用戶"""
+        
+    async def get_user_company(line_id: str) -> tuple[User, Company]:
+        """取得用戶及其所屬公司"""
+        
+    async def check_user_permission(user_id: int, required_role: str) -> bool:
+        """檢查用戶權限"""
+        
+    async def log_audit(company_id: int, action: str, **kwargs):
+        """記錄審計日誌"""
+```
+
+**核心功能：**
+
+- 跨公司的用戶身份驗證
+- 角色權限管理（admin > cs > user）
+- 完整的審計日誌記錄
+- 用戶統計和配額管理
 
 ---
 
-## 安全與商用提醒
+## 🚀 多租戶啟動流程
 
-- Webhook 已加入 `X-Line-Signature` 驗簽；需要設定 `LINE_CHANNEL_SECRET`
-- 建議為管理端點（/ingest、/documents 刪除）加入 API Key/JWT 保護
-- 上傳端點請增加檔案大小限制、檔名清理、檔案指紋掃描（生產環境）
-- CORS 白名單、HTTPS 與憑證更新策略
+### 應用程式生命週期
+
+1. **資料庫初始化 (`main.py`)**：
+
+   ```python
+   @asynccontextmanager
+   async def lifespan(app: FastAPI):
+       # 建立資料表
+       create_tables()
+       
+       # 初始化多租戶 RAG 服務管理器
+       multitenant_rag_service = get_multitenant_rag_service()
+       
+       yield
+       
+       # 清理所有租戶服務
+       await multitenant_rag_service.cleanup_all_services()
+   ```
+
+2. **租戶服務按需初始化**：
+   - 當 LINE webhook 收到訊息時
+   - 根據 Channel Token 識別公司
+   - 動態載入該公司的 RAG 服務
+   - 建立公司專用的工作目錄
 
 ---
 
-## 如何執行
+## ⚙️ 多租戶環境配置
 
-在 `LineRAG/apps/api` 目錄下：
+### 核心環境變數
 
 ```bash
-uvicorn main:app --reload
+# PostgreSQL 多租戶資料庫
+DATABASE_URL=postgresql://linerag:linerag@localhost:5432/linerag_multitenant
+
+# OpenAI API 配置
+OPENAI_API_KEY=sk-your-api-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# RAG-Anything 基礎配置
+RAG_WORKING_DIR=./rag_storage  # 基礎目錄，各公司會有子目錄
+RAG_PARSER=mineru
+RAG_PARSE_METHOD=auto
+
+# Redis 配置（會話管理）
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+
+# 系統管理員設定
+ADMIN_LINE_IDS=admin_line_id_1,admin_line_id_2
 ```
 
-> 注意：為了正確匯入 `app.services.*`，請在 `apps/api` 目錄啟動。
+### 公司專用配置
+
+每個公司在資料庫中有專用設定：
+
+- `line_channel_token`：該公司的 LINE Channel Access Token
+- `line_channel_secret`：該公司的 LINE Channel Secret
+- `rag_working_dir`：該公司的 RAG 工作目錄（如 `./rag_storage/company_1`）
+- `subscription_plan`：訂閱方案（影響配額限制）
 
 ---
 
-## 常見問題（FAQ）
+## 🛣️ 多租戶 API 路由設計
 
-- 為什麼 `from app.services.multimodal_service import ...`？
-  - 因為多模態與 OCR 已被移入 `app/services`，統一由 `app` 作為套件根。
+### LINE Webhook 多公司路由
 
-- `/documents` 為何不用 JSON？
-  - 重構後以 Qdrant 的 payload.metadata 作為單一真實來源，避免多份狀態不同步。
+```python
+@router.post("/webhook")
+async def line_webhook(request: Request):
+    # 1. 驗證 LINE 簽名
+    # 2. 根據 Channel Token 識別公司
+    # 3. 取得該公司的 RAG 服務
+    # 4. 處理用戶訊息（公司隔離）
+```
 
-- `/ingest-async` 的任務狀態是持久的嗎？
-  - 目前示範為記憶體暫存。生產請改用任務佇列（Celery/RQ/Arq）與持久化（Redis/DB）。
+### 問答 API（多租戶支援）
+
+```python
+@router.post("/ask")
+async def ask(request: AskRequest, user: User = Depends(get_current_user)):
+    # 1. 驗證用戶身份和公司歸屬
+    # 2. 取得用戶所屬公司的 RAG 服務
+    # 3. 在該公司的知識庫中檢索
+    # 4. 記錄審計日誌
+```
+
+### 文檔上傳（按公司隔離）
+
+```python
+@router.post("/ingest")
+async def ingest_document(file: UploadFile, company_id: int):
+    # 1. 驗證公司配額
+    # 2. 取得該公司的 RAG 服務
+    # 3. 在該公司的工作目錄中處理文檔
+    # 4. 更新文檔元資料表
+```
 
 ---
 
-## 後續可選強化
+## 🔄 多租戶資料流與處理邏輯
 
-- API 認證/授權與速率限制
-- LLM/Qdrant 呼叫的 timeout/重試/斷路器
-- Prometheus /metrics、結構化日誌與分散式追蹤（OpenTelemetry）
-- 將多模態/LLM 推理服務化（獨立服務）
-- `/documents` 分頁化與條件過濾（大資料量場景）
+### 1. 公司註冊與初始化流程
+
+```mermaid
+graph TD
+    A[新公司註冊] --> B[建立 Company 記錄]
+    B --> C[設定 LINE Channel 資訊]
+    C --> D[建立公司工作目錄]
+    D --> E[初始化 RAG 服務實例]
+    E --> F[建立管理員帳戶]
+    F --> G[公司可開始使用]
+```
+
+### 2. 用戶訊息處理流程
+
+```mermaid
+graph TD
+    A[LINE 用戶傳送訊息] --> B[webhook 接收]
+    B --> C[根據 Channel Token 識別公司]
+    C --> D[取得/建立用戶記錄]
+    D --> E[取得公司 RAG 服務]
+    E --> F[在公司知識庫中檢索]
+    F --> G[產生回答]
+    G --> H[記錄審計日誌]
+    H --> I[回傳給用戶]
+```
+
+### 3. 文檔處理流程（多租戶）
+
+```mermaid
+graph TD
+    A[上傳文檔] --> B[驗證公司權限]
+    B --> C[檢查配額限制]
+    C --> D[取得公司 RAG 服務]
+    D --> E[在公司目錄中處理]
+    E --> F[向量化並存儲]
+    F --> G[更新文檔元資料]
+    G --> H[回傳處理結果]
+```
+
+---
+
+## 🔐 多租戶安全性與隔離
+
+### 資料隔離策略
+
+1. **資料庫層隔離**：
+   - 所有資料表都包含 `company_id` 外鍵
+   - 查詢時必須加入公司過濾條件
+   - 防止跨公司資料洩露
+
+2. **檔案系統隔離**：
+
+   ```bash
+   rag_storage/
+   ├── company_1/
+   │   ├── documents/
+   │   └── vectors/
+   ├── company_2/
+   │   ├── documents/
+   │   └── vectors/
+   ```
+
+3. **向量資料庫隔離**：
+   - RAG-Anything 按工作目錄分離
+   - 每個公司有獨立的向量空間
+   - 檢索時自動限制在公司範圍內
+
+### 安全機制
+
+- **API 認證**：每個請求必須攜帶有效的公司和用戶識別
+- **權限控制**：admin > cs > user 的三級權限系統
+- **配額限制**：按公司設定文檔數量和查詢次數上限
+- **審計追蹤**：完整記錄所有操作，支援合規審查
+
+---
+
+## 📊 監控與運維
+
+### 系統監控指標
+
+```python
+# 健康檢查包含多租戶狀態
+@router.get("/health")
+async def health_check():
+    return {
+        "database": "健康狀態",
+        "active_companies": "啟用公司數量",
+        "total_users": "總用戶數",
+        "rag_services": "載入的 RAG 服務數量",
+        "redis_connection": "Redis 連接狀態"
+    }
+```
+
+### 多租戶統計
+
+- **公司使用統計**：文檔數量、查詢次數、活躍用戶
+- **系統資源使用**：記憶體、磁碟空間、API 調用
+- **效能監控**：回應時間、錯誤率、並發處理能力
+
+---
+
+## 🚀 部署與擴展
+
+### 多租戶部署架構
+
+```bash
+# 1. PostgreSQL 資料庫
+docker run --name postgres-multitenant \
+  -e POSTGRES_DB=linerag_multitenant \
+  -e POSTGRES_USER=linerag \
+  -e POSTGRES_PASSWORD=linerag \
+  -p 5432:5432 -d postgres:15
+
+# 2. Redis 快取
+docker run --name redis-sessions \
+  -p 6379:6379 -d redis:alpine
+
+# 3. Qdrant 向量資料庫
+docker run --name qdrant-vectors \
+  -p 6333:6333 -d qdrant/qdrant
+
+# 4. LineRAG API 應用
+docker build -t linerag-multitenant .
+docker run -p 8000:8000 linerag-multitenant
+```
+
+### 水平擴展策略
+
+- **資料庫分片**：按公司 ID 進行水平分片
+- **服務實例**：多個 API 實例負載均衡
+- **快取分離**：Redis Cluster 支援更多併發
+- **檔案儲存**：遷移到雲端物件儲存（S3、Azure Blob）
+
+---
+
+## 🔧 故障排除
+
+### 常見多租戶問題
+
+1. **公司服務初始化失敗**
+
+   ```bash
+   # 檢查公司資料庫記錄
+   SELECT * FROM companies WHERE is_active = true;
+   
+   # 檢查工作目錄權限
+   ls -la rag_storage/
+   ```
+
+2. **跨公司資料洩露檢查**
+
+   ```sql
+   -- 確認所有查詢都包含公司過濾
+   SELECT DISTINCT company_id FROM document_metadata;
+   ```
+
+3. **效能問題診斷**
+
+   ```bash
+   # 檢查載入的 RAG 服務數量
+   curl http://localhost:8000/health
+   
+   # 檢查資料庫連接池
+   SELECT * FROM pg_stat_activity;
+   ```
+
+---
+
+## 🔮 未來發展規劃
+
+### 短期目標（3個月）
+
+- 完善多公司管理後台
+- 實現動態配額調整
+- 增加更多審計功能
+- 優化多租戶效能
+
+### 中期目標（6個月）
+
+- 支援更多 LINE 以外的渠道
+- 實現公司間資料共享機制
+- 增加高級分析報表
+- 支援白標客製化
+
+### 長期目標（1年）
+
+- 微服務架構拆分
+- 支援地理分散部署
+- AI 驅動的自動化運維
+- 企業級 SLA 保證
+
+---
+
+## 📚 參考資料與相關文檔
+
+- [RAG-Anything 官方文檔](https://github.com/your-org/rag-anything)
+- [PostgreSQL 多租戶最佳實踐](https://www.postgresql.org/docs/)
+- [FastAPI 企業應用指南](https://fastapi.tiangolo.com/)
+- [SQLAlchemy ORM 文檔](https://docs.sqlalchemy.org/)
+
+---
+
+**版本**：v2.0 (Multi-Tenant RAG-Anything Framework)
+**更新日期**：2025-08-13
+**維護者**：羽翔

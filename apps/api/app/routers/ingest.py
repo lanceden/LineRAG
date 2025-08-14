@@ -1,344 +1,420 @@
+"""
+文檔擷取處理 API 路由
+使用 RAG-Anything 處理多模態文檔，支援多租戶架構
+"""
+
 import os
-import time
 import uuid
 import json
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-import redis.asyncio as redis
-
-# Load .env
-from app.core import env
-from app.services.vectorstore import get_vectorstore_service
-from app.services.smart_tagging import get_smart_tagging_service
-from langchain.schema import Document
-from langchain_community.document_loaders import (
-    PyMuPDFLoader,
-    Docx2txtLoader,
-    UnstructuredWordDocumentLoader,
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    BackgroundTasks,
+    UploadFile,
+    File,
+    Form,
+    Depends,
 )
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from qdrant_client.models import Filter, FieldCondition, MatchValue
+from sqlalchemy.orm import Session
 
-from app.schemas.ingest import IngestRequest
+from app.core.database import get_db
+from app.services.multitenant_rag import get_multitenant_rag_service
+from app.services.multitenant_user import get_multitenant_user_service
+from app.models.document import DocumentMetadata
+from app.schemas.ingest import IngestRequest, IngestResponse
 
 router = APIRouter(prefix="", tags=["ingest"])
 
 
-# Redis connection
-def get_redis_client():
-    """獲取 Redis 客戶端"""
-    return redis.Redis(
-        host=os.getenv("REDIS_HOST", "localhost"),
-        port=int(os.getenv("REDIS_PORT", "6379")),
-        db=int(os.getenv("REDIS_DB", "0")),
-        decode_responses=True,
-    )
-
-
-async def set_task_status(task_id: str, status: Dict[str, Any]):
-    """設定任務狀態到 Redis"""
-    redis_client = get_redis_client()
+async def process_document_task(
+    task_id: str, file_path: str, company_id: int, user_id: int, db: Session
+):
+    """背景任務：處理文檔"""
     try:
-        await redis_client.setex(
-            f"task:{task_id}", 3600, json.dumps(status)  # 1小時過期
+        # 更新文檔狀態為處理中
+        document = (
+            db.query(DocumentMetadata).filter(DocumentMetadata.id == task_id).first()
         )
-    finally:
-        await redis_client.close()
 
+        if document:
+            document.status = "processing"
+            db.commit()
 
-async def get_task_status(task_id: str) -> Dict[str, Any]:
-    """從 Redis 獲取任務狀態"""
-    redis_client = get_redis_client()
-    try:
-        result = await redis_client.get(f"task:{task_id}")
-        if result:
-            return json.loads(result)
-        return {"status": "not_found"}
-    finally:
-        await redis_client.close()
+        # 獲取多租戶 RAG 服務
+        multitenant_rag = get_multitenant_rag_service()
+        rag_service = await multitenant_rag.get_company_rag_service(company_id, db)
 
+        # 使用 RAG-Anything 處理文檔
+        result = await rag_service.process_document(file_path, str(company_id))
 
-async def add_document_to_vectorstore(
-    file_path: str, original_name: str, use_ocr: bool = False
-) -> str:
-    """
-    將文件添加到向量儲存中。
-    根據 use_ocr 參數決定是否使用 OCR 進行文字提取。
-    如果文件是 PDF 或 Word 文件，則載入並分割成塊，然後添加到向量儲存。
-    為每個塊添加元數據，包括文件 ID、檔名、上傳時間和處理方法。
-    """
-    vs = get_vectorstore_service()
-    if vs.vectordb is None:
-        raise HTTPException(status_code=500, detail="向量庫未初始化")
-
-    # 生成文件 ID
-    doc_id = str(uuid.uuid4())
-    documents: List[Document] = []
-
-    if use_ocr:
-        # OCR 模式：交給現有 document_processor（維持行為一致）
-        try:
-            from app.services.document_processor import get_document_processor
-
-            dp = get_document_processor()
-            extracted_texts = dp.process_document_with_ocr(file_path, original_name)
-            for page_num, text in extracted_texts:
-                documents.append(
-                    Document(
-                        page_content=text,
-                        metadata={
-                            "page_number": page_num,
-                            "source": original_name,
-                            "extraction_method": "ocr",
-                        },
-                    )
-                )
-        except Exception as ocr_error:
-            # OCR 失敗，降級為傳統文字提取
-            print(f"OCR failed, falling back to traditional extraction: {ocr_error}")
-            use_ocr = False
-
-    if not use_ocr:
-        # 傳統文字抽取
-        file_extension = os.path.splitext(file_path)[1].lower()
-        if file_extension == ".pdf":
-            loader = PyMuPDFLoader(file_path)
-        elif file_extension in [".doc", ".docx"]:
-            try:
-                loader = Docx2txtLoader(file_path)
-            except Exception:
-                try:
-                    loader = UnstructuredWordDocumentLoader(file_path)
-                except Exception as e2:
-                    raise HTTPException(
-                        status_code=400, detail=f"無法載入 Word 文件: {str(e2)}"
-                    )
+        if result["status"] == "success":
+            # 更新文檔狀態為完成
+            if document:
+                document.status = "completed"
+                document.metadata = result
+                db.commit()
         else:
-            raise HTTPException(status_code=400, detail="不支援的文件格式")
-        documents = loader.load()
+            # 更新文檔狀態為失敗
+            if document:
+                document.status = "failed"
+                document.error_message = result["message"]
+                db.commit()
 
-    if not documents:
-        raise HTTPException(status_code=400, detail="無法從文件中提取內容")
-
-    # 分塊前記錄共用欄位
-    upload_time = time.time()
-
-    # 方案A功能：智能標籤分析
-    document_analysis = None
-    try:
-        # 整合所有文檔內容進行分析
-        full_content = "\n\n".join([doc.page_content for doc in documents])
-        
-        # 使用智能標籤服務分析文檔
-        tagging_service = get_smart_tagging_service()
-        document_analysis = await tagging_service.analyze_document(
-            content=full_content,
-            filename=original_name
-        )
-        print(f"Document analysis completed for {original_name}")
     except Exception as e:
-        print(f"Smart tagging analysis failed for {original_name}: {e}")
-        # 分析失敗時繼續處理，不阻斷上傳流程
-
-    # 分塊
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=int(os.getenv("CHUNK_SIZE", "1000")),
-        chunk_overlap=int(os.getenv("CHUNK_OVERLAP", "200")),
-        length_function=len,
-    )
-    chunks = text_splitter.split_documents(documents)
-
-    total_chunks = len(chunks)
-    for chunk in chunks:
-        # 標註文件層級 metadata，供 Qdrant 直接查詢
-        chunk.metadata["doc_id"] = doc_id
-        chunk.metadata["filename"] = original_name
-        chunk.metadata["upload_time"] = upload_time
-        chunk.metadata["chunk_count"] = total_chunks
-        chunk.metadata["processing_method"] = "ocr" if use_ocr else "traditional"
-        
-        # 方案A功能：添加智能標籤分析結果
-        if document_analysis:
-            classification = document_analysis.get("classification", {})
-            chunk.metadata["department"] = classification.get("department", "通用")
-            chunk.metadata["doc_type"] = classification.get("doc_type", "其他")
-            chunk.metadata["product_line"] = classification.get("product_line", "通用服務")
-            chunk.metadata["priority"] = classification.get("priority", "中")
-            chunk.metadata["audience"] = classification.get("audience", "員工")
-            chunk.metadata["tags"] = document_analysis.get("tags", [])
-            chunk.metadata["summary"] = document_analysis.get("summary", "")
-            chunk.metadata["entities"] = document_analysis.get("entities", {})
-            chunk.metadata["confidence"] = classification.get("confidence", 0.5)
-            chunk.metadata["document_id"] = doc_id  # 為檢索服務使用
-
-    # 寫入向量庫
-    vs.vectordb.add_documents(chunks)
-
-    return doc_id
+        # 更新文檔狀態為失敗
+        document = (
+            db.query(DocumentMetadata).filter(DocumentMetadata.id == task_id).first()
+        )
+        if document:
+            document.status = "failed"
+            document.error_message = str(e)
+            db.commit()
 
 
-@router.post("/ingest")
-async def ingest_document(request: IngestRequest):
+@router.post("/ingest/document", response_model=IngestResponse)
+async def ingest_document(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    company_id: int = Form(...),
+    user_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
     """
-    同步處理文件並將其添加到向量儲存。
-    接收 IngestRequest 物件，其中包含文件路徑、原始檔名和是否使用 OCR 的選項。
+    上傳並處理單個文檔
+    支援 PDF、Office 文檔、圖像等格式
     """
-    if not os.path.exists(request.file_path):
-        raise HTTPException(status_code=404, detail="文件不存在")
+    # 檢查用戶權限
+    user_service = get_multitenant_user_service()
+    user = await user_service.get_user_by_id(user_id, db)
+    if not user or user.company_id != company_id:
+        raise HTTPException(status_code=403, detail="沒有權限訪問此公司資源")
 
-    allowed_extensions = [".pdf", ".doc", ".docx"]
-    file_extension = os.path.splitext(request.file_path)[1].lower()
+    # 檢查文件格式
+    allowed_extensions = {
+        ".pdf",
+        ".docx",
+        ".pptx",
+        ".xlsx",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".bmp",
+        ".tiff",
+    }
+    file_extension = Path(file.filename).suffix.lower()
+
     if file_extension not in allowed_extensions:
-        raise HTTPException(status_code=400, detail="不支援的文件格式")
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支援的文件格式: {file_extension}. 支援的格式: {', '.join(allowed_extensions)}",
+        )
 
-    doc_id = await add_document_to_vectorstore(
-        request.file_path, request.original_name, request.use_ocr
+    # 創建上傳目錄
+    upload_dir = Path("uploads") / str(company_id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    # 保存上傳的文件
+    file_path = upload_dir / file.filename
+
+    try:
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"文件保存失敗: {str(e)}")
+
+    # 創建文檔記錄
+    document_id = str(uuid.uuid4())
+    document = DocumentMetadata(
+        id=document_id,
+        filename=file.filename,
+        file_path=str(file_path),
+        file_size=len(content),
+        file_type=file_extension,
+        company_id=company_id,
+        uploaded_by=user_id,
+        status="queued",
     )
+
+    try:
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"資料庫錯誤: {str(e)}")
+
+    # 啟動背景任務
+    background_tasks.add_task(
+        process_document_task, document_id, str(file_path), company_id, user_id, db
+    )
+
+    return IngestResponse(
+        task_id=document_id,
+        status="queued",
+        message=f"文檔 {file.filename} 已加入處理佇列",
+    )
+
+
+@router.post("/ingest/folder")
+async def ingest_folder(
+    background_tasks: BackgroundTasks,
+    folder_path: str = Form(...),
+    company_id: int = Form(...),
+    user_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    """
+    批量處理資料夾中的文檔
+    """
+    # 檢查用戶權限
+    user_service = get_multitenant_user_service()
+    user = await user_service.get_user_by_id(user_id, db)
+    if not user or user.company_id != company_id:
+        raise HTTPException(status_code=403, detail="沒有權限訪問此公司資源")
+
+    folder = Path(folder_path)
+
+    if not folder.exists() or not folder.is_dir():
+        raise HTTPException(status_code=400, detail="資料夾路徑不存在")
+
+    # 創建批次任務 ID
+    batch_id = str(uuid.uuid4())
+
+    async def process_folder_task():
+        try:
+            # 獲取多租戶 RAG 服務
+            multitenant_rag = get_multitenant_rag_service()
+            rag_service = await multitenant_rag.get_company_rag_service(company_id, db)
+
+            # 使用 RAG-Anything 批量處理
+            result = await rag_service.process_folder(folder_path, str(company_id))
+
+            # 為批次中的每個文件創建文檔記錄
+            if result["status"] == "success" and "processed_files" in result:
+                for file_info in result["processed_files"]:
+                    document = DocumentMetadata(
+                        id=str(uuid.uuid4()),
+                        filename=file_info["filename"],
+                        file_path=file_info["path"],
+                        file_size=file_info.get("size", 0),
+                        file_type=Path(file_info["filename"]).suffix.lower(),
+                        company_id=company_id,
+                        uploaded_by=user_id,
+                        status="completed",
+                        metadata=file_info,
+                    )
+                    db.add(document)
+
+                db.commit()
+
+        except Exception as e:
+            # 記錄錯誤
+            print(f"批次處理失敗: {str(e)}")
+
+    # 啟動背景任務
+    background_tasks.add_task(process_folder_task)
+
+    return IngestResponse(
+        task_id=batch_id,
+        status="queued",
+        message=f"資料夾 {folder_path} 已加入處理佇列",
+    )
+
+
+@router.post("/ingest/content")
+async def ingest_content_list(
+    background_tasks: BackgroundTasks,
+    request: IngestRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    直接插入內容列表
+    支援預解析的多模態內容
+    """
+    # 檢查用戶權限
+    user_service = get_multitenant_user_service()
+    user = await user_service.get_user_by_id(request.user_id, db)
+    if not user or user.company_id != request.company_id:
+        raise HTTPException(status_code=403, detail="沒有權限訪問此公司資源")
+
+    task_id = str(uuid.uuid4())
+
+    async def process_content_task():
+        try:
+            # 獲取多租戶 RAG 服務
+            multitenant_rag = get_multitenant_rag_service()
+            rag_service = await multitenant_rag.get_company_rag_service(
+                request.company_id, db
+            )
+
+            # 插入內容列表
+            result = await rag_service.insert_content_list(
+                content_list=request.content_list,
+                file_path=request.file_path,
+                company_id=str(request.company_id),
+            )
+
+            if result["status"] == "success":
+                # 創建文檔記錄
+                document = DocumentMetadata(
+                    id=task_id,
+                    filename=(
+                        Path(request.file_path).name
+                        if request.file_path
+                        else "直接內容"
+                    ),
+                    file_path=request.file_path or "",
+                    file_size=len(str(request.content_list)),
+                    file_type="content",
+                    company_id=request.company_id,
+                    uploaded_by=request.user_id,
+                    status="completed",
+                    metadata=result,
+                )
+                db.add(document)
+                db.commit()
+
+        except Exception as e:
+            # 創建失敗記錄
+            document = DocumentMetadata(
+                id=task_id,
+                filename=(
+                    Path(request.file_path).name if request.file_path else "直接內容"
+                ),
+                file_path=request.file_path or "",
+                file_size=len(str(request.content_list)),
+                file_type="content",
+                company_id=request.company_id,
+                uploaded_by=request.user_id,
+                status="failed",
+                error_message=str(e),
+            )
+            db.add(document)
+            db.commit()
+
+    # 啟動背景任務
+    background_tasks.add_task(process_content_task)
+
+    return IngestResponse(
+        task_id=task_id, status="queued", message="內容列表已加入處理佇列"
+    )
+
+
+@router.get("/ingest/status/{task_id}")
+async def get_ingest_status(task_id: str, db: Session = Depends(get_db)):
+    """
+    檢查擷取任務狀態
+    """
+    document = db.query(DocumentMetadata).filter(DocumentMetadata.id == task_id).first()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="任務不存在")
+
     return {
-        "message": "文件處理成功",
-        "doc_id": doc_id,
-        "filename": request.original_name,
-        "status": "success",
+        "task_id": task_id,
+        "status": document.status,
+        "filename": document.filename,
+        "file_path": document.file_path,
+        "file_size": document.file_size,
+        "file_type": document.file_type,
+        "created_at": document.created_at,
+        "updated_at": document.updated_at,
+        "metadata": document.metadata,
+        "error_message": document.error_message,
     }
 
 
-@router.post("/ingest-async")
-async def ingest_document_async(request: IngestRequest, background: BackgroundTasks):
+@router.get("/ingest/documents/{company_id}")
+async def list_company_documents(
+    company_id: int,
+    user_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
     """
-    異步處理文件並將其添加到向量儲存。
-    返回一個任務 ID，用於追蹤處理狀態。
+    列出公司的所有文檔
     """
-    if not os.path.exists(request.file_path):
-        raise HTTPException(status_code=404, detail="文件不存在")
+    # 檢查用戶權限
+    user_service = get_multitenant_user_service()
+    user = await user_service.get_user_by_id(user_id, db)
+    if not user or user.company_id != company_id:
+        raise HTTPException(status_code=403, detail="沒有權限訪問此公司資源")
 
-    task_id = uuid.uuid4().hex
-    await set_task_status(task_id, {"status": "pending"})
-
-    async def _run():
-        await set_task_status(task_id, {"status": "processing"})
-        try:
-            doc_id = await add_document_to_vectorstore(
-                request.file_path, request.original_name, request.use_ocr
-            )
-            await set_task_status(
-                task_id,
-                {"status": "done", "doc_id": doc_id, "filename": request.original_name},
-            )
-        except Exception as e:
-            await set_task_status(task_id, {"status": "error", "error": str(e)})
-
-    background.add_task(_run)
-    return {"task_id": task_id, "status": "queued"}
-
-
-@router.get("/tasks/{task_id}")
-async def get_task_status_route(task_id: str):
-    """獲取任務狀態"""
-    return await get_task_status(task_id)
-
-
-from typing import Generator
-
-
-def _iter_points(limit: int = 256) -> Generator[List[Any], None, None]:
-    """
-    迭代獲取向量儲存中的點（數據塊）。
-    用於分批讀取數據，避免一次性載入過多數據。
-    """
-    vs = get_vectorstore_service()
-    client = vs.qdrant_client
-    collection = vs.vectordb.collection_name
-    offset = None
-    while True:
-        points, offset = client.scroll(
-            collection_name=collection,
-            limit=limit,
-            with_payload=True,
-            with_vectors=False,
-            offset=offset,
-        )
-        if not points:
-            break
-        yield points
-        if offset is None:
-            break
-
-
-@router.get("/documents")
-def list_documents():
-    """
-    列出所有已處理的文件。
-    從向量儲存中讀取文件元數據，並返回文件列表，包含文件 ID、檔名、上傳日期和塊數。
-    """
-    vs = get_vectorstore_service()
-    if vs.vectordb is None or vs.qdrant_client is None:
-        raise HTTPException(status_code=500, detail="向量庫未初始化")
-
-    docs: Dict[str, Dict[str, Any]] = {}
-    for batch in _iter_points():
-        for p in batch:
-            meta = (p.payload or {}).get("metadata", {})
-            doc_id = meta.get("doc_id")
-            if not doc_id:
-                continue
-            if doc_id not in docs:
-                docs[doc_id] = {
-                    "doc_id": doc_id,
-                    "filename": meta.get("filename"),
-                    "upload_time": meta.get("upload_time"),
-                    "chunk_count": meta.get("chunk_count"),
-                    # 方案A功能：顯示智能分析結果
-                    "department": meta.get("department"),
-                    "doc_type": meta.get("doc_type"),
-                    "product_line": meta.get("product_line"),
-                    "priority": meta.get("priority"),
-                    "audience": meta.get("audience"),
-                    "tags": meta.get("tags", []),
-                    "summary": meta.get("summary"),
-                    "confidence": meta.get("confidence"),
-                }
-
-    documents = []
-    for d in docs.values():
-        upload_date = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime(d.get("upload_time", time.time()))
-        )
-        documents.append(
-            {
-                "doc_id": d["doc_id"],
-                "filename": d.get("filename"),
-                "upload_date": upload_date,
-                "chunk_count": d.get("chunk_count", 0),
-                # 方案A功能：包含智能分析結果
-                "department": d.get("department"),
-                "doc_type": d.get("doc_type"),
-                "product_line": d.get("product_line"),
-                "priority": d.get("priority"),
-                "audience": d.get("audience"),
-                "tags": d.get("tags", []),
-                "summary": d.get("summary"),
-                "confidence": d.get("confidence"),
-            }
-        )
-
-    return {"documents": documents, "total_count": len(documents)}
-
-
-@router.delete("/documents/{doc_id}")
-def delete_document(doc_id: str):
-    """
-    根據文件 ID 刪除向量儲存中的文件。
-    """
-    vs = get_vectorstore_service()
-    if vs.vectordb is None or vs.qdrant_client is None:
-        raise HTTPException(status_code=500, detail="向量庫未初始化")
-
-    vs.qdrant_client.delete(
-        collection_name=vs.vectordb.collection_name,
-        points_selector=Filter(
-            must=[FieldCondition(key="metadata.doc_id", match=MatchValue(value=doc_id))]
-        ),
+    documents = (
+        db.query(DocumentMetadata)
+        .filter(DocumentMetadata.company_id == company_id)
+        .offset(skip)
+        .limit(limit)
+        .all()
     )
 
-    return {"message": "刪除請求已送出", "doc_id": doc_id}
+    return {
+        "documents": [
+            {
+                "id": doc.id,
+                "filename": doc.filename,
+                "file_path": doc.file_path,
+                "file_size": doc.file_size,
+                "file_type": doc.file_type,
+                "status": doc.status,
+                "created_at": doc.created_at,
+                "updated_at": doc.updated_at,
+                "error_message": doc.error_message,
+            }
+            for doc in documents
+        ],
+        "total": len(documents),
+        "skip": skip,
+        "limit": limit,
+    }
+
+
+@router.delete("/ingest/document/{document_id}")
+async def delete_document(
+    document_id: str,
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    刪除文檔及其相關數據
+    """
+    # 獲取文檔
+    document = (
+        db.query(DocumentMetadata).filter(DocumentMetadata.id == document_id).first()
+    )
+
+    if not document:
+        raise HTTPException(status_code=404, detail="文檔不存在")
+
+    # 檢查用戶權限
+    user_service = get_multitenant_user_service()
+    user = await user_service.get_user_by_id(user_id, db)
+    if not user or user.company_id != document.company_id:
+        raise HTTPException(status_code=403, detail="沒有權限訪問此公司資源")
+
+    # 從 RAG 服務中刪除文檔數據
+    try:
+        multitenant_rag = get_multitenant_rag_service()
+        rag_service = await multitenant_rag.get_company_rag_service(
+            document.company_id, db
+        )
+        await rag_service.delete_document(document.file_path)
+    except Exception as e:
+        print(f"從 RAG 服務刪除文檔時出錯: {str(e)}")
+
+    # 刪除文件系統中的文件
+    try:
+        if document.file_path and Path(document.file_path).exists():
+            Path(document.file_path).unlink()
+    except Exception as e:
+        print(f"刪除文件時出錯: {str(e)}")
+
+    # 從資料庫中刪除記錄
+    db.delete(document)
+    db.commit()
+
+    return {"message": f"文檔 {document.filename} 已成功刪除"}

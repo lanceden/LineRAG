@@ -1,8 +1,7 @@
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
-import { SessionProvider } from "./components/SessionProvider"
-import Sidebar from "./components/Sidebar"
+import { SessionProvider } from "@/components/SessionProvider"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,8 +14,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "LINE RAG Lite",
-  description: "LINE Login Testing Application",
+  title: "LineRAG 多租戶管理平台",
+  description: "LineRAG 多租戶 AI 客服系統管理平台",
 }
 
 export default function RootLayout({
@@ -26,15 +25,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-TW">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <SessionProvider>
-          <div className="flex min-h-screen">
-            <Sidebar />
-            <main className="flex-1 lg:ml-16 xl:ml-64 transition-all duration-300 pt-16 lg:pt-0">
-              {children}
-            </main>
-          </div>
+          {children}
         </SessionProvider>
       </body>
     </html>

@@ -2,12 +2,15 @@ import hmac
 import hashlib
 import base64
 import os
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 import httpx
 from dotenv import load_dotenv
+from sqlalchemy.orm import Session
 
 from app.schemas.ask import Message
-from app.services.rag import generate_answer_from_messages
+from app.services.multitenant_rag import get_multitenant_rag_service
+from app.services.multitenant_user import get_multitenant_user_service
+from app.core.database import get_db
 
 load_dotenv()
 
@@ -36,18 +39,20 @@ def verify_line_signature(body: bytes, x_line_signature: str | None) -> bool:
 
 
 @router.post("/webhook")
-async def line_webhook(request: Request):
+async def line_webhook(request: Request, db: Session = Depends(get_db)):
     """
-    處理來自 LINE 的 Webhook 事件。
-    驗證請求簽名，解析事件，並對文字訊息進行回覆。
+    處理來自 LINE 的 Webhook 事件（多租戶版本）。
+    根據 Channel Token 識別公司，使用該公司的 RAG 服務處理訊息。
     """
     raw_body = await request.body()
     signature = request.headers.get("x-line-signature")
-    if not verify_line_signature(raw_body, signature):
-        raise HTTPException(status_code=401, detail="Invalid LINE signature")
-
+    
     body = await request.json()
     events = body.get("events", [])
+
+    # 取得多租戶服務
+    multitenant_rag_service = get_multitenant_rag_service()
+    user_service = get_multitenant_user_service(db)
 
     for event in events:
         if (
@@ -56,30 +61,77 @@ async def line_webhook(request: Request):
         ):
             user_text = event["message"]["text"]
             reply_token = event["replyToken"]
+            line_user_id = event["source"]["userId"]
 
-            # 使用 RAG 服務生成答案
-            answer = generate_answer_from_messages(
-                [
-                    Message(
-                        id="1", role="user", parts=[{"type": "text", "text": user_text}]
+            try:
+                # 根據請求頭中的 Channel Token 或從資料庫查找對應公司
+                # 這裡需要實作根據 webhook 識別公司的邏輯
+                # 暫時使用環境變數作為備用
+                line_access_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+                
+                if not line_access_token:
+                    continue  # 如果 LINE token 未配置，則跳過
+
+                # 驗證簽名（根據公司的 Channel Secret）
+                if not verify_line_signature(raw_body, signature):
+                    raise HTTPException(status_code=401, detail="Invalid LINE signature")
+
+                # TODO: 實作根據 Channel Token 找到公司的邏輯
+                # company = await multitenant_rag_service.get_company_by_line_channel(line_access_token, db)
+                
+                # 暫時使用預設公司 ID
+                company_id = 1  # 這應該從上面的邏輯取得
+                
+                # 取得或建立用戶
+                user = await user_service.get_user_by_line_id(line_user_id, company_id)
+                if not user:
+                    # 自動註冊新用戶
+                    user = await user_service.create_user(
+                        company_id=company_id,
+                        line_id=line_user_id,
+                        name=f"LINE用戶_{line_user_id[-6:]}",
+                        role="user"
                     )
-                ]
-            )
 
-            line_access_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-            if not line_access_token:
-                continue  # 如果 LINE token 未配置，則跳過
+                # 取得該公司的 RAG 服務
+                company_rag_service = await multitenant_rag_service.get_company_rag_service(company_id, db)
+                
+                # 使用公司的 RAG 服務生成答案
+                answer = await company_rag_service.ask(user_text)
 
-            headers = {
-                "Authorization": f"Bearer {line_access_token}",
-                "Content-Type": "application/json",
-            }
-            payload = {
-                "replyToken": reply_token,
-                "messages": [{"type": "text", "text": answer}],
-            }
-            # 使用 httpx 發送回覆訊息
-            async with httpx.AsyncClient() as client:
-                await client.post(LINE_REPLY_ENDPOINT, headers=headers, json=payload)
+                # 記錄審計日誌
+                await user_service.log_audit(
+                    company_id=company_id,
+                    user_id=user.id,
+                    action="line_message_processed",
+                    resource_type="message",
+                    resource_id=reply_token,
+                    status="success"
+                )
+
+                # 回覆訊息
+                headers = {
+                    "Authorization": f"Bearer {line_access_token}",
+                    "Content-Type": "application/json",
+                }
+                payload = {
+                    "replyToken": reply_token,
+                    "messages": [{"type": "text", "text": answer}],
+                }
+                
+                async with httpx.AsyncClient() as client:
+                    await client.post(LINE_REPLY_ENDPOINT, headers=headers, json=payload)
+
+            except Exception as e:
+                # 記錄錯誤日誌
+                await user_service.log_audit(
+                    company_id=company_id if 'company_id' in locals() else None,
+                    action="line_message_error",
+                    resource_type="message",
+                    resource_id=reply_token,
+                    status="error",
+                    error_message=str(e)
+                )
+                continue
 
     return "ok"

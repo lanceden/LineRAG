@@ -126,6 +126,7 @@ import pdb; pdb.set_trace()
 ```
 
 然後用命令行運行：
+
 ```bash
 cd apps/api
 uvicorn main:app --reload
@@ -159,6 +160,7 @@ if __name__ == "__main__":
 ```
 
 使用：
+
 ```bash
 cd apps/api
 python dev.py
@@ -169,8 +171,8 @@ python dev.py
 ### Run Configuration 設定
 
 1. **Script path**: `apps/api/main.py`
-2. **Working directory**: `apps/api` 
-3. **Environment variables**: 
+2. **Working directory**: `apps/api`
+3. **Environment variables**:
    - `PYTHONPATH=apps/api`
 4. **Python interpreter**: 使用虛擬環境
 
@@ -310,4 +312,4 @@ curl -X POST http://localhost:8000/ask \
 4. **性能分析**: 使用 Debug 中間件
 5. **生產 Debug**: 使用 Docker debug 配置
 
-選擇最適合你開發環境的方法即可！
+---

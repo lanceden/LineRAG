@@ -10,41 +10,27 @@ pydantic
 requests
 httpx
 
-# Document processing and PDF handling
-pymupdf
-langchain
-langchain-community
-python-docx
-docx2pdf
+# RAG-Anything framework - Multi-modal RAG system
+raganything[all]
 
-# Vector database and embeddings
+# Vector database (Qdrant for RAG-Anything)
 qdrant-client
-sentence-transformers
 
-# LLM integration
+# OpenAI API integration
 openai
 
-# AI/ML frameworks
-torch
-torchvision  
-transformers
-accelerate
+# Database for multi-tenant architecture
+psycopg2-binary
+sqlalchemy
+alembic
 
-# Image processing
-Pillow
-opencv-python
-
-# Multimodal AI models
-qwen-vl-utils
+# Authentication and security
+pyjwt[crypto]
+passlib[bcrypt]
 
 # Utility packages
 tqdm
-pathlib2
 python-dotenv
-
-# Redis for task queue
-redis
-aioredis
 
 # Development tools
 debugpy

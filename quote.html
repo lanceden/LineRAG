@@ -142,87 +142,64 @@
             <h1 id="ai-智能客服系統產品化規劃與合作報價方案"><strong>AI 智能客服系統產品化規劃與合作報價方案</strong></h1>
 <hr>
 <h2 id="-專案願景與目標"><strong>🎯 專案願景與目標</strong></h2>
-<p>開發一套 AI 智能客服系統，為企業提供<strong>外部客戶服務自動化</strong>與<strong>內部客服管理效率化</strong>的雙重價值。系統整合多渠道客戶接觸點（LINE 官方帳號、官網聊天框）與智能知識庫檢索（RAG），採用地端模型部署確保資料隱私與成本控制。</p>
+<p>開發一套 AI 智能客服系統，為企業提供<strong>客戶統一管理後台</strong>，支援 A、B、C 等多家公司</p>
+<ul>
+<li><strong>統一管理後台</strong>：設定各公司 LINE Channel 資料即可使用</li>
+<li><strong>多模態文檔處理</strong>：支援 PDF、Office、圖像等多種格式智能解析</li>
+<li><strong>RAG 檢索</strong>：採用智能檢索框架，支援圖像、表格、公式等複雜內容查詢</li>
+<li><strong>知識圖譜增強</strong>：自動建立實體關係，提升查詢準確性與上下文理解</li>
+<li><strong>專業對話品質</strong>：採用 GPT API 整合，確保對話品質</li>
+<li><strong>完整交付</strong>：包含完整技術文檔與原始碼交付</li>
+<li><strong>工作時間技術支援</strong>：交付後4個月工作時間技術支援。</li>
+</ul>
 <p><strong>核心目標：</strong></p>
 <ul>
-<li><strong>提升客戶體驗</strong>：7×24 即時回應，快速解決常見問題</li>
+<li><strong>提升客戶體驗</strong>：即時回應，快速解決常見問題</li>
 <li><strong>降低人力成本</strong>：自動回應 80% 基礎問題</li>
-<li><strong>保護資料隱私</strong>：完全地端部署，客戶對話不外流</li>
-<li><strong>易於維運管理</strong>：單一後台管理、監控對話品質</li>
+<li><strong>專業對話品質</strong>：採用 GPT API 確保回應準確性與自然度</li>
+<li><strong>多公司支援</strong>：簡單設定即可支援多家公司，共用管理後台</li>
 </ul>
 <hr>
 <h2 id="-系統架構說明"><strong>🧩 系統架構說明</strong></h2>
-<h3 id="️-方案-a-企業優化架構">🅰️ <strong>方案 A 企業優化架構</strong></h3>
-<p>適用於需要企業級功能與高效能的智能客服解決方案，平衡功能完整性與實施風險：</p>
+<h3 id="️-方案-a-標準版核心架構">🅰️ <strong>方案 A 標準版核心架構</strong></h3>
+<p>適用於多公司共用管理需求，一套系統管理多家公司：</p>
 <ol>
-<li><strong>智能多渠道接入層：</strong> LINE 官方帳號、官網聊天框、多渠道路由管理、用戶身份識別、多輪對話狀態管理</li>
-<li><strong>企業管理控制台：</strong> 完整後台管理系統、3層級權限控制（管理員/客服主管/客服）</li>
-<li><strong>智能知識管理系統（RAG）：</strong> 文檔批量處理、內容自動分類、檢索效能提升、標籤自動生成、多文檔整合查詢</li>
-<li><strong>AI 對話核心引擎：</strong> 智能語意匹配、對話記憶管理、連續對話支援、回應品質控制</li>
-<li><strong>標準模型服務層：</strong> 單卡優化部署、模型狀態監控、推理參數調優</li>
-<li><strong>基礎API中心：</strong> 標準API接口、基礎擴展功能支援</li>
-<li><strong>智能監控與分析：</strong> 即時效能監控、使用者行為統計、基礎報表系統</li>
+<li><strong>多渠道對話接入：</strong> LINE 官方帳號、官網聊天框，後台簡單設定即可切換</li>
+<li><strong>統一管理後台：</strong> 多公司設定管理、知識庫上傳、對話記錄查詢、統計報表</li>
+<li><strong>多模態 RAG 系統：</strong> 支援文本、圖像、表格、公式等多模態內容處理</li>
+<li><strong>AI 對話核心：</strong> GPT API 整合、智能問答功能、多輪對話上下文管理</li>
+<li><strong>簡易權限管理：</strong> 管理員/客服人員雙層級、公司別管理</li>
+<li><strong>系統監控：</strong> 運行狀態監控、API 使用統計、各公司使用分析</li>
 </ol>
-<h3 id="️-方案-b-標準版核心架構">🅱️ <strong>方案 B 標準版核心架構</strong></h3>
-<p>適用於基礎客服需求，提供核心功能的標準版本：</p>
-<ol>
-<li><strong>基礎對話接入：</strong> LINE 官方帳號、官網聊天框基礎整合</li>
-<li><strong>簡易管理後台：</strong> 知識庫上傳管理、對話記錄查詢、基礎統計報表</li>
-<li><strong>標準知識庫（RAG）：</strong> PDF/Word 文檔上傳、基本分段處理、向量檢索、文檔刪除管理</li>
-<li><strong>AI 對話核心：</strong> 地端 LLM 推理（vLLM）、基礎問答功能</li>
-<li><strong>基礎權限管理：</strong> 管理員/客服人員雙層級、帳號密碼登入</li>
-<li><strong>系統監控：</strong> 基礎運行狀態、簡單使用統計</li>
-</ol>
-<h2 id="-合作方案與報價"><strong>📦 合作方案與報價</strong></h2>
-<h3 id="️-方案-a企業優化版">🅰️ 方案 A：企業優化版</h3>
-<p>適合需要企業級功能、高效能與風險控制的智能客服解決方案。</p>
-<table>
-<thead>
-<tr>
-<th>項目</th>
-<th>說明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>專案價格</strong></td>
-<td><strong>NT$ 2,100,000（未稅）</strong></td>
-</tr>
-<tr>
-<td><strong>分期付款</strong></td>
-<td>簽約 40% / 階段交付 40% / 驗收完成 20%</td>
-</tr>
-<tr>
-<td><strong>開發時程</strong></td>
-<td>5-6 個月（分階段交付）</td>
-</tr>
-<tr>
-<td><strong>核心特色</strong></td>
-<td>企業級 7 模組架構 + 高效能 + 實用安全 + 基礎客製化</td>
-</tr>
-<tr>
-<td><strong>服務內容</strong></td>
-<td>完整技術轉移、交付後4個月工作時間支援、完整說明文檔與 SOP</td>
-</tr>
-<tr>
-<td><strong>適用場景</strong></td>
-<td>中高流量客服、實用權限管理、需要穩定可靠的企業級功能</td>
-</tr>
-<tr>
-<td><strong>年維護費</strong></td>
-<td><strong>NT$ 420,000（20%）</strong></td>
-</tr>
-</tbody>
-</table>
-<p><strong>🎁 企業優化專屬服務：</strong></p>
+<h3 id="-資料存儲架構"><strong>💾 資料存儲架構</strong></h3>
+<p><strong>簡單分類存儲設計：</strong></p>
+<pre><code class="language-bash">共用系統架構：
+├── 後台管理/
+│   ├── 公司設定 (LINE Channel 設定)
+│   ├── 用戶權限管理
+│   └── 系統監控
+├── 各公司資料/
+│   ├── Company_A_documents/
+│   ├── Company_B_documents/
+│   └── Company_C_documents/
+└── 共用功能/
+    ├── GPT API 整合
+    ├── 向量檢索引擎
+    └── 對話記錄
+</code></pre>
+<p><strong>技術架構：</strong></p>
 <ul>
-<li>完整原始碼交付與技術轉移</li>
-<li>基礎客製化需求開發（30 小時內免費）</li>
-<li>工作時間優先技術支援（週一至五 9-18）+ 緊急熱線</li>
+<li><strong>多模態文檔處理</strong>：支援 PDF、Office、圖像等多格式</li>
+<li><strong>文檔存儲</strong>：本地檔案系統或雲端儲存，依公司分資料夾</li>
+<li><strong>向量資料庫</strong>：Qdrant（支援多模態向量檢索）</li>
+<li><strong>知識圖譜</strong>：自動化實體提取和關係映射</li>
+<li><strong>設定檔</strong>：JSON 檔案，存放各公司 LINE 設定與多模態處理配置</li>
+<li><strong>對話記錄</strong>：PostgreSQL</li>
 </ul>
 <hr>
-<h4 id="️-方案-b標準版">🅱️ 方案 B：標準版</h4>
-<p>提供核心AI客服功能的基礎版本，可升級至A方案享折抵優惠。</p>
+<h2 id="-合作方案與報價"><strong>📦 合作方案與報價</strong></h2>
+<h3 id="️-方案-a共用管理標準版">🅰️ 方案 A：共用管理標準版</h3>
+<p>提供多公司共用AI客服功能，統一後台管理多家公司。</p>
 <table>
 <thead>
 <tr>
@@ -232,45 +209,115 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>專案價格</strong></td>
+<td><strong>系統總價</strong></td>
 <td><strong>NT$ 1,200,000（未稅）</strong></td>
 </tr>
 <tr>
 <td><strong>分期付款</strong></td>
-<td>簽約 50% / 驗收完成 50%</td>
+<td>簽約 30% / 階段交付 50% / 驗收完成 20%</td>
 </tr>
 <tr>
 <td><strong>開發時程</strong></td>
-<td>3-4 個月交付</td>
+<td><strong>依客戶需求時程規劃交付</strong></td>
 </tr>
 <tr>
 <td><strong>核心特色</strong></td>
-<td>基礎 6 模組架構 + 雙渠道整合 + 標準維運</td>
+<td>共用管理 6 模組架構 + 雙渠道整合 + GPT API</td>
 </tr>
 <tr>
 <td><strong>服務內容</strong></td>
-<td>操作培訓、基礎文檔、交付後3個月技術諮詢</td>
+<td>完整技術文檔、操作培訓、交付後4個月技術支援</td>
 </tr>
 <tr>
-<td><strong>使用限制</strong></td>
-<td>單一組織、20-30併發、標準工時支援</td>
+<td><strong>支援公司</strong></td>
+<td>支援 100+ 家公司統一管理（可擴展）</td>
 </tr>
 <tr>
 <td><strong>年維護費</strong></td>
-<td><strong>NT$ 240,000（20%）</strong></td>
+<td><strong>NT$ 240,000/年（系統總價20%）</strong></td>
 </tr>
 </tbody>
 </table>
-<p><strong>📌 與企業優化版本的主要差異：</strong></p>
+<h4 id="-核心功能價值"><strong>💰 核心功能價值：</strong></h4>
+<table>
+<thead>
+<tr>
+<th>核心功能模組</th>
+<th>技術複雜度</th>
+<th>商業價值</th>
+<th>定價 (NT$)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>多模態智能檢索系統</strong></td>
+<td>🔥 最高</td>
+<td>核心競爭力</td>
+<td>360,000</td>
+</tr>
+<tr>
+<td><strong>多租戶架構設計</strong></td>
+<td>🔥 最高</td>
+<td>擴展基礎</td>
+<td>240,000</td>
+</tr>
+<tr>
+<td><strong>GPT API 整合與優化</strong></td>
+<td>⭐ 高</td>
+<td>對話品質</td>
+<td>160,000</td>
+</tr>
+<tr>
+<td><strong>LINE + 官網雙渠道整合</strong></td>
+<td>⭐ 高</td>
+<td>客戶觸達</td>
+<td>200,000</td>
+</tr>
+<tr>
+<td><strong>統一管理後台開發</strong></td>
+<td>⭐ 中高</td>
+<td>營運管理</td>
+<td>120,000</td>
+</tr>
+<tr>
+<td><strong>知識圖譜自動建構</strong></td>
+<td>🔥 最高</td>
+<td>智能檢索</td>
+<td>120,000</td>
+</tr>
+<tr>
+<td><strong>系統總價</strong></td>
+<td></td>
+<td></td>
+<td><strong>1,200,000</strong></td>
+</tr>
+</tbody>
+</table>
+<h4 id="-多公司共用優勢"><strong>💡 多公司共用優勢：</strong></h4>
+<p><strong>技術架構優勢：</strong></p>
 <ul>
-<li>採用 6 個基礎模組（vs A 的 7 個企業級模組）</li>
-<li>2層級權限管理（vs 3層級權限 + 操作記錄）</li>
-<li>無API接口、無基礎擴展功能</li>
-<li>標準工時技術支援（vs 工作時間優先支援 + 緊急熱線）</li>
-<li>3個月支援期（vs 4個月支援期）</li>
+<li>一套系統支援多家公司，統一維護升級</li>
+<li>各公司資料完全隔離，確保資料安全</li>
+<li>新增公司成本低，僅需設定配置檔案</li>
+<li>共用核心技術，但保持各公司獨立運作</li>
+</ul>
+<p><strong>經濟效益分析：</strong></p>
+<ul>
+<li>相較於單一公司自建（約250萬+6-8個月），共用架構大幅降低成本</li>
+<li>多公司使用時，開發成本可依實際使用情況協商分攤</li>
+<li>年維護費固定24萬，不論使用公司數量，多家分攤更划算</li>
+</ul>
+<p><strong>📌 方案 A 功能特色：</strong></p>
+<ul>
+<li>統一管理後台，支援 A、B、C 等多家公司</li>
+<li>設定各公司 LINE Channel 資料即可使用</li>
+<li>各公司文檔分類管理，RAG 檢索準確</li>
+<li>GPT API 整合，確保對話品質</li>
+<li>完整技術文檔與原始碼交付</li>
+<li>工作時間技術支援（週一～五，交付後4個月）</li>
 </ul>
 <hr>
-<h4 id="-方案-cpoc-概念驗證">🧪 方案 C：POC 概念驗證</h4>
+<h3 id="️-方案-bpoc-概念驗證">🅱️ 方案 B：POC 概念驗證</h3>
 <table>
 <thead>
 <tr>
@@ -285,11 +332,11 @@
 </tr>
 <tr>
 <td><strong>交付時程</strong></td>
-<td>1-2 個月交付</td>
+<td>1個月交付</td>
 </tr>
 <tr>
 <td><strong>功能範圍</strong></td>
-<td>LINE 或官網任選一渠道 + 基礎 RAG 系統 + 固定文檔庫 50 份</td>
+<td>單一公司 + LINE 或官網一渠道 + 多模態檢索基礎版 + 固定文檔庫 50 份</td>
 </tr>
 <tr>
 <td><strong>成果交付</strong></td>
@@ -297,203 +344,123 @@
 </tr>
 <tr>
 <td><strong>後續優惠</strong></td>
-<td>後續升級至方案 B / A 可 全額折抵本案費用</td>
+<td>後續升級至方案 A 可 全額折抵本案費用</td>
 </tr>
 </tbody>
 </table>
+<p><strong>💡 POC 技術價值說明：</strong></p>
+<p>此 POC 並非簡單聊天機器人，而是包含完整多模態 RAG 技術架構：</p>
+<ul>
+<li><strong>多模態文檔處理</strong>：支援 PDF、Office、圖像等複雜格式解析</li>
+<li><strong>向量檢索引擎</strong>：Qdrant 多模態向量檢索技術</li>
+<li><strong>GPT API 深度整合</strong>：包含錯誤處理、費用控制、回應品質保障</li>
+<li><strong>知識圖譜建構</strong>：自動化實體提取和關係映射</li>
+<li><strong>語義檢索優化</strong>：智能識別查詢類型，提供精準跨模態檢索</li>
+</ul>
 <p><strong>🎯 POC 適用情況：</strong></p>
 <ul>
 <li>正在規劃導入 AI 客服技術，需內部提案或實測驗證</li>
-<li>有初步對話資料 / FAQ 文檔可用於測試（50份內）</li>
-<li>評估實際 RAG 問答效果與部署環境需求</li>
-<li>希望降低開發風險、先行試行 MVP 架構</li>
+<li>單一公司先行測試，未來有多公司擴展需求</li>
+<li>評估實際多模態 RAG 問答效果與 GPT API 整合表現</li>
+<li>希望降低開發風險、先行試行完整技術架構</li>
+<li>需要技術可行性報告，證明多模態檢索的實際效果</li>
 </ul>
-<p><strong>📋 POC 版本限制說明：</strong></p>
+<p><strong>📋 POC 版本功能說明：</strong></p>
+<p>✅ <strong>包含核心技術</strong>：</p>
 <ul>
+<li>完整多模態 RAG 架構（可直接升級擴展）</li>
+<li>GPT API 整合與優化</li>
+<li>向量檢索與語義理解</li>
+<li>基礎知識圖譜建構</li>
+</ul>
+<p>⚠️ <strong>簡化限制</strong>：</p>
+<ul>
+<li><strong>公司限制</strong>：僅支援單一公司測試</li>
 <li><strong>渠道限制</strong>：僅支援單一渠道（LINE 或官網二選一）</li>
-<li><strong>文檔庫限制</strong>：由我方預先載入客戶提供的 50 份文件，系統不含文檔管理功能</li>
-<li><strong>無後台管理</strong>：不提供管理介面，無法自行新增、修改或刪除文檔</li>
+<li><strong>文檔庫限制</strong>：固定 50 份文件，系統不含文檔管理功能</li>
+<li><strong>管理介面</strong>：簡化版管理介面</li>
 <li><strong>對話能力</strong>：基礎問答功能，不支援多輪複雜對話</li>
-<li>適合各種規模企業進行功能驗證和效果評估</li>
 </ul>
 <hr>
-<h3 id="-後續維運服務選項">💼 後續維運服務選項</h3>
-<p><strong>系統交付後，客戶可選擇：</strong></p>
-<h3 id="選項-1自主維運推薦">選項 1：自主維運（推薦）</h3>
+<h3 id="-開發技術說明與特色"><strong>🧠 開發技術說明與特色</strong></h3>
+<h4 id="-共用管理核心技術能力"><strong>✅ 共用管理核心技術能力</strong></h4>
 <ul>
-<li>我方提供完整技術文檔</li>
-<li>包含 3 個月免費技術諮詢</li>
-<li>客戶團隊負責日常維護和問題排除</li>
+<li><strong>GPT API 整合：</strong> 穩定的 API 串接、錯誤處理、費用控制與回應品質保障</li>
+<li><strong>自主研發多模態架構：</strong> 多模態文檔處理，支援圖像、表格、公式等複雜內容</li>
+<li><strong>知識圖譜索引：</strong> 自動化實體提取和關係構建，建立跨模態語義連接網絡</li>
+<li><strong>模態感知檢索：</strong> 智能識別查詢類型，提供精準的跨模態檢索能力</li>
+<li><strong>並發處理架構：</strong> 多流水線設計，確保高效能文檔處理和查詢響應</li>
+<li><strong>簡易權限與安全：</strong> 公司別資料管理、用戶分級、資料保護、API 安全機制</li>
+<li><strong>多渠道整合：</strong> LINE Webhook 處理、多輪對話、用戶狀態管理、公司識別路由</li>
 </ul>
-<h3 id="選項-2委託維運服務">選項 2：委託維運服務</h3>
+<h4 id="-共用管理架構優勢"><strong>🏢 共用管理架構優勢</strong></h4>
 <ul>
-<li><strong>依專案運行方式計費</strong></li>
+<li>
+<p><strong>簡單易用：</strong> 後台設定 LINE 資料即可啟用新公司</p>
+</li>
+<li>
+<p><strong>成本效益：</strong> 一套系統管理多家公司，降低維運成本</p>
+</li>
+<li>
+<p><strong>彈性擴展：</strong> 可輕鬆新增更多公司，只需要設定檔案</p>
+</li>
+<li>
+<p><strong>統一維護：</strong> 集中管理所有公司，降低技術門檻#### <strong>💰 成本結構透明化</strong></p>
+</li>
+<li>
+<p><strong>開發成本：</strong> 一次性支付，獲得完整系統所有權</p>
+</li>
+<li>
+<p><strong>API 使用費：</strong> 按各公司實際對話量計費，透明可控</p>
+</li>
+<li>
+<p><strong>維運成本：</strong> 年維護費依使用公司數量計算，彈性收費</p>
+</li>
+<li>
+<p><strong>擴展成本：</strong> 新增公司成本低，主要為設定與培訓</p>
+</li>
 </ul>
-<h3 id="選項-3混合維運">選項 3：混合維運</h3>
-<ul>
-<li>日常維護由客戶負責</li>
-<li>重大問題或升級需求可按次計費</li>
-</ul>
-<hr>
-<h3 id="-開發挑戰與技術限制說明"><strong>🧠 開發挑戰與技術限制說明</strong></h3>
-<p>本專案專精於<strong>單租戶AI客服系統</strong>的深度優化，基於以下技術與資源考量：</p>
-<h4 id="-已掌握的核心技術"><strong>✅ 已掌握的核心技術</strong></h4>
-<ul>
-<li><strong>地端 LLM 模型整合：</strong> vLLM、Ollama 環境建置、效能調優與模型穩定性保障</li>
-<li><strong>RAG 文件轉向量品質控管：</strong> 分段策略（chunking）、Metadata 標註、語意精度評估</li>
-<li><strong>單租戶權限與安全：</strong> 用戶分級、資料保護、API 安全機制</li>
-<li><strong>LINE 整合與對話管理：</strong> Webhook 處理、多輪對話、用戶狀態管理</li>
-</ul>
-<h4 id="️-多租戶架構限制說明"><strong>⚠️ 多租戶架構限制說明</strong></h4>
-<ul>
-<li>本系統採用<strong>單租戶深度優化架構</strong>，專注於單一客戶的效能穩定性與資料安全，但<strong>不限制部署次數與對象</strong>。如貴公司後續承接多個品牌或客戶，可採以下兩種方式彈性擴展：</li>
-<li><strong>自行部署新實例：</strong> 於新機器或雲端環境部署相同系統，資料隔離、效能獨立；</li>
-<li><strong>由我方協助部署：</strong> 提供部署支援與技術轉移，視需求另行報價。</li>
-</ul>
-<h4 id="️-多租戶共享架構雖具理論彈性但實務上將造成"><strong>⚠️ 多租戶共享架構雖具理論彈性，但實務上將造成：</strong></h4>
-<ul>
-<li>成本暴增（H100 三卡成本近 400 萬，僅支援 &lt;100 併發）</li>
-<li>架構複雜化（需實作資料隔離、權限矩陣、租戶計費）</li>
-<li>維運風險升高（任一租戶異常即影響整體服務）</li>
-<li>建議以「單租戶 + 多實例部署」方式實施，效能更穩定，資源可控，且符合多數 B2B 實務需求。</li>
-</ul>
-<hr>
-<h4 id="-專注單租戶的優勢"><strong>🎯 專注單租戶的優勢</strong></h4>
-<ul>
-<li><strong>效能最佳化：</strong> 所有資源專注於單一客戶，回應速度與穩定性最優</li>
-<li><strong>客製化深度：</strong> 可針對特定業務場景深度調優 RAG 與對話邏輯</li>
-<li><strong>資料隱私：</strong> 完全私有部署，無資料外洩風險</li>
-<li><strong>維運簡單：</strong> 單一環境，故障排除與系統維護更容易</li>
-</ul>
-<p>開發流程將依模組優先順序與客戶需求逐步交付，專注於單租戶系統的穩定性與效能優化。</p>
 <hr>
 <h3 id="-方案選擇指南">📋 方案選擇指南</h3>
-<h3 id="️-建議選擇方案-b標準版的情況">🅱️ <strong>建議選擇方案 B（標準版）的情況：</strong></h3>
+<h3 id="️-建議選擇方案-a多公司標準版的情況">🅰️ <strong>建議選擇方案 A（多公司標準版）的情況：</strong></h3>
 <ul>
-<li><strong>預算考量</strong>：專案預算在 120-150 萬以內</li>
-<li><strong>基礎需求</strong>：主要需要 LINE 客服 + 官網問答功能</li>
-<li><strong>簡單維運</strong>：希望系統簡單易用，維運負擔較輕</li>
-<li><strong>流量適中</strong>：每日客戶互動 &lt; 200 次</li>
-<li><strong>功能够用</strong>：不需要複雜的權限管理和進階分析</li>
-<li><strong>資料隱私優先</strong>：重視客戶對話資料不外流</li>
-<li><strong>長期成本考量</strong>：希望避免年費訂閱制，擁有系統所有權</li>
+<li><strong>多公司需求</strong>：有 2 家以上公司需要AI客服系統</li>
+<li><strong>預算考量</strong>：專案預算在 100-150 萬以內</li>
+<li><strong>資料隔離要求</strong>：不同公司間需要資料分離</li>
+<li><strong>統一管理需求</strong>：希望用單一系統管理多家公司</li>
+<li><strong>長期規劃</strong>：計劃逐步擴展到更多公司使用</li>
+<li><strong>成本分攤</strong>：多家公司分攤開發與維運成本</li>
 </ul>
-<p><strong>🎯 方案B的核心優勢：</strong></p>
-<p>✅ <strong>完全地端部署</strong> - 客戶對話資料100%私有，符合資安規範
-✅ <strong>快速回本</strong> - 2-3年回收投資，後續純為營運收益
-✅ <strong>技術掌控</strong> - 獲得完整原始碼，可自主維護升級
-✅ <strong>彈性擴展</strong> - 可依需求升級至企業版，投資不浪費</p>
-<h3 id="️-建議選擇方案-a企業優化版的情況">🅰️ <strong>建議選擇方案 A（企業優化版）的情況：</strong></h3>
+<p><strong>🎯 方案A的核心優勢：</strong></p>
+<p>✅ <strong>多公司支援</strong> - 完整的多租戶架構，支援 100+ 家公司
+✅ <strong>資料隔離</strong> - A、B、C 公司資料完全隔離，確保資料安全
+✅ <strong>高品質對話</strong> - 採用 GPT API，確保對話自然流暢
+✅ <strong>成本效益</strong> - 多家公司分攤成本，單家公司成本更低
+✅ <strong>技術先進</strong> - 自動享受 OpenAI 技術升級</p>
+<h3 id="️-建議選擇方案-bpoc的情況">🅱️ <strong>建議選擇方案 B（POC）的情況：</strong></h3>
 <ul>
-<li><strong>中高流量需求</strong>：每日客戶互動 &gt; 300 次，需要高效能支援</li>
-<li><strong>實用權限管理</strong>：多部門使用，需要清晰的權限分級</li>
-<li><strong>技術轉移</strong>：希望完整掌握技術，建立內部維運能力</li>
-<li><strong>未來擴展</strong>：有中長期規劃，需要基礎客製化支援</li>
-<li><strong>風險控制</strong>：重視系統穩定性與實施成功率</li>
-<li><strong>預算平衡</strong>：需要企業級功能但預算有限制</li>
+<li><strong>技術驗證需求</strong>：需要驗證多模態 RAG 技術在實際業務場景的效果</li>
+<li><strong>風險控制</strong>：希望先測試完整技術架構後再決定多公司導入</li>
+<li><strong>預算分階段</strong>：初期預算有限，但有後續擴展計劃</li>
+<li><strong>效果評估</strong>：需要實際測試多模態檢索 + GPT API 的問答品質</li>
+<li><strong>內部提案</strong>：需要具體技術成果向管理層展示 AI 客服可行性</li>
+<li><strong>快速驗證</strong>：1個月內需要看到完整技術架構運行成果</li>
 </ul>
-<p><strong>⚠️ 方案功能對比分析：</strong></p>
-<table>
-<thead>
-<tr>
-<th>功能項目</th>
-<th>方案 B（標準版）</th>
-<th>方案 A（企業優化版）</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>系統架構</strong></td>
-<td>6個基礎模組</td>
-<td>7個企業級模組，功能實用完整</td>
-</tr>
-<tr>
-<td><strong>LINE 對話</strong></td>
-<td>基礎整合</td>
-<td>智能多渠道 + 用戶識別 + 狀態管理</td>
-</tr>
-<tr>
-<td><strong>RAG 知識庫</strong></td>
-<td>基本上傳、檢索、刪除</td>
-<td>批量處理、效能提升、多文檔整合、自動標籤</td>
-</tr>
-<tr>
-<td><strong>權限管理</strong></td>
-<td>2層級（管理員/客服）</td>
-<td>3層級（管理員/客服主管/客服） + 操作記錄</td>
-</tr>
-<tr>
-<td><strong>AI推理與部署</strong></td>
-<td>單一模型推理，基礎配置</td>
-<td>穩定模型推理 + 單卡優化部署 + 參數調優 + 狀態監控</td>
-</tr>
-<tr>
-<td><strong>監控分析</strong></td>
-<td>基礎運行統計</td>
-<td>即時監控 + 行為統計 + 基礎報表</td>
-</tr>
-<tr>
-<td><strong>API功能</strong></td>
-<td>✗</td>
-<td>標準API接口 + 基礎擴展</td>
-</tr>
-<tr>
-<td><strong>技術支援</strong></td>
-<td>標準工時（週一～五，交付後3個月）</td>
-<td>工作時間優先支援（週一～五 9-18）+ 緊急熱線（交付後4個月）</td>
-</tr>
-<tr>
-<td><strong>文檔交付</strong></td>
-<td>基礎操作手冊</td>
-<td>完整技術文檔 + 架構設計 + SOP</td>
-</tr>
-<tr>
-<td><strong>技術轉移</strong></td>
-<td>操作手冊</td>
-<td>完整原始碼說明文件 + 架構說明</td>
-</tr>
-<tr>
-<td><strong>客製開發</strong></td>
-<td>✗</td>
-<td>基礎客製化（30小時免費）</td>
-</tr>
-<tr>
-<td><strong>對話記憶</strong></td>
-<td>3輪對話上下文</td>
-<td>6-8輪深度對話支援</td>
-</tr>
-<tr>
-<td><strong>未來擴展性</strong></td>
-<td>有限（需重新開發）</td>
-<td>模組化架構，易於擴展</td>
-</tr>
-</tbody>
-</table>
-<h3 id="-權限管理功能對比">📋 權限管理功能對比</h3>
-<p><strong>基礎權限管理（方案 B）：</strong></p>
-<ul>
-<li><strong>用戶角色</strong>：管理員 + 客服人員（2層級）</li>
-<li><strong>功能權限</strong>：管理員可管理知識庫，客服可查看對話記錄</li>
-<li><strong>登入方式</strong>：帳號密碼登入</li>
-<li><strong>操作控制</strong>：基本的功能開關</li>
-<li><strong>適用場景</strong>：10人以下小團隊，權限需求簡單</li>
-</ul>
-<p><strong>企業級權限管理（方案 A）：</strong></p>
-<ul>
-<li><strong>用戶角色</strong>：管理員/客服主管/客服人員（3層級）</li>
-<li><strong>實用權限</strong>：可控制文件管理、對話查看、統計報表存取權限</li>
-<li><strong>基礎認證</strong>：帳號密碼 + 基礎安全控制</li>
-<li><strong>審計功能</strong>：操作日誌記錄、基本合規報表</li>
-<li><strong>適用場景</strong>：中型企業應用，滿足基本內控和管理需求</li>
-</ul>
+<p><strong>🎯 POC 核心價值：</strong></p>
+<p>✅ <strong>完整技術驗證</strong> - 不是簡化版，而是完整多模態 RAG 架構
+✅ <strong>直接升級路徑</strong> - POC 架構可直接擴展為多公司版本
+✅ <strong>風險降低</strong> - 40萬驗證技術可行性，避免120萬的技術風險
+✅ <strong>快速決策</strong> - 1個月內獲得實際運行效果，加速決策流程</p>
+<p><strong>💡 升級路徑：</strong></p>
+<p>POC → 方案 A（全額抵扣 POC 成本，實際只需再投入 80萬）</p>
 <hr>
 <h3 id="-合作補充與備註"><strong>📌 合作補充與備註</strong></h3>
 <ul>
-<li>所有交付項目皆含完整原始碼與操作文件，並可彈性依需求調整。</li>
-<li>若選擇POC先行，未來升級至A方案或B方案，既有開發內容將可沿用，不重工。</li>
-<li>可另議維運協議、模型穩定性保障與儲存成本優化規劃。</li>
-<li>本報價為未稅金額，如合作需開立正式發票，或由配合單位代開，將酌收 5% 稅費處理成本。</li>
-<li>若選擇無發票方案並開立個人收據，客戶得依內部規定辦理預扣憑單。</li>
+<li>所有交付項目皆含完整原始碼與技術文檔，可彈性依需求調整。</li>
+<li>方案 A 支援 100+ 家公司，技術架構可彈性擴展。</li>
+<li>GPT API 使用費用由各公司分別承擔。</li>
+<li>提供完整的多租戶部署文檔與維運手冊。</li>
+<li>本報價為未稅金額，如需開立發票將酌收 5% 稅費處理成本。</li>
 </ul>
 <hr>
 

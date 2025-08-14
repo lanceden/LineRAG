@@ -4,23 +4,20 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Core utilities
 from app.core.logging import setup_logging
+from app.core.database import create_tables
+from app.core.middleware import JWTAuthMiddleware
 
 # Services (initialize on startup)
-from app.services.vectorstore import get_vectorstore_service
-from app.services.user_service import get_user_service
-
-# Ensure LLM client initializes OpenAI base/key
-from app.services import llm as _llm  # noqa: F401
+from app.services.multitenant_rag import get_multitenant_rag_service
 
 # Routers
 from app.routers.health import router as health_router
 from app.routers.ask import router as ask_router
 from app.routers.ingest import router as ingest_router
-from app.routers.image import router as image_router
 from app.routers.webhook import router as webhook_router
-from app.routers.users import router as users_router
+from app.routers.system_users import router as system_users_router
+from app.routers.tenant_users import router as tenant_users_router
 from app.routers.admin import router as admin_router
-from app.routers.rag import router as rag_router
 
 
 @asynccontextmanager
@@ -29,32 +26,33 @@ async def lifespan(app: FastAPI):
     logger = setup_logging()
 
     # Startup
-    logger.info("🚀 Starting LineRAG API...")
+    logger.info("🚀 Starting LineRAG API with Multi-Tenant RAG-Anything...")
 
-    # Initialize vector store (embeddings + Qdrant)
-    vs = get_vectorstore_service()
+    # Initialize database tables
     try:
-        vs.init()
-        logger.info("✅ Vector store initialized successfully")
+        create_tables()
+        logger.info("✅ Database tables initialized successfully")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize vector store: {e}")
+        logger.error(f"❌ Failed to initialize database tables: {e}")
         # Do not crash the app; health endpoint will reflect the error state.
 
-    # Initialize user service (Redis)
-    user_service = await get_user_service()
-    logger.info("✅ User service initialized successfully")
+    # Initialize Multi-Tenant RAG service
+    multitenant_rag_service = get_multitenant_rag_service()
+    logger.info("✅ Multi-Tenant RAG service initialized successfully")
 
     yield
 
     # Shutdown
     logger.info("🛑 Shutting down LineRAG API...")
+    await multitenant_rag_service.cleanup_all_services()
 
 
 app = FastAPI(
-    title="LineRAG API",
-    description="RAG API with multimodal support",
-    version="1.0.0",
+    title="LineRAG Multi-Tenant API",
+    description="Multi-Tenant RAG API with RAG-Anything multimodal support",
+    version="2.0.0",
     lifespan=lifespan,
+    root_path="/api",  # 添加 API 前綴支援 nginx 反向代理
 )
 
 # Configure CORS
@@ -66,15 +64,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add JWT authentication middleware
+app.add_middleware(JWTAuthMiddleware)
+
 # Include modular routers
 app.include_router(health_router)
 app.include_router(ask_router)
 app.include_router(ingest_router)
-app.include_router(image_router)
 app.include_router(webhook_router)
-app.include_router(users_router)
+app.include_router(system_users_router)
+app.include_router(tenant_users_router)
 app.include_router(admin_router)
-app.include_router(rag_router)
 
 
 # 支援直接運行調試

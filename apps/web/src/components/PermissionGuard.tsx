@@ -4,16 +4,17 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { hasPermission } from '@/lib/permissions'
+import { Permission } from '@/types/auth'
 
 interface PermissionGuardProps {
-  requiredRole?: 'admin' | 'cs'
+  requiredPermission?: keyof Omit<Permission, 'canAccessCompany'>
   fallback?: React.ReactNode
   redirectTo?: string
   children: React.ReactNode
 }
 
 export default function PermissionGuard({ 
-  requiredRole, 
+  requiredPermission, 
   fallback, 
   redirectTo = '/dashboard',
   children 
@@ -25,20 +26,20 @@ export default function PermissionGuard({
     if (status === 'loading') return
     
     if (!session) {
-      router.push('/')
+      router.push('/auth/login')
       return
     }
     
     if (!session.user?.isActive) {
-      router.push('/unauthorized')
+      router.push('/auth/login')
       return
     }
     
-    if (requiredRole && !hasPermission(session.user?.role, requiredRole)) {
+    if (requiredPermission && !hasPermission(requiredPermission, session.user?.role)) {
       router.push(redirectTo)
       return
     }
-  }, [session, status, requiredRole, router, redirectTo])
+  }, [session, status, requiredPermission, router, redirectTo])
   
   if (status === 'loading') {
     return (
@@ -56,17 +57,17 @@ export default function PermissionGuard({
           <h1 className="text-2xl font-bold text-gray-800 mb-4">未授權存取</h1>
           <p className="text-gray-600 mb-6">您需要登入才能存取此頁面</p>
           <button 
-            onClick={() => router.push('/')}
+            onClick={() => router.push('/auth/login')}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
-            回到首頁
+            登入
           </button>
         </div>
       </div>
     )
   }
   
-  if (requiredRole && !hasPermission(session.user?.role, requiredRole)) {
+  if (requiredPermission && !hasPermission(requiredPermission, session.user?.role)) {
     return fallback || (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
