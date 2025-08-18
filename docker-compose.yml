@@ -36,14 +36,15 @@ services:
       - rag_storage:/app/rag_storage
     depends_on:
       - qdrant
+      - neo4j
       # vLLM 是可選的，如果使用外部 LLM 服務可以移除
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     networks:
       - linerag-network
 
@@ -80,7 +81,7 @@ services:
 
   # Qdrant 向量資料庫
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.7.4
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -97,11 +98,91 @@ services:
       retries: 3
     networks:
       - linerag-network
+    
+  neo4j:
+    image: neo4j:5.20
+    container_name: linerag-neo4j
+    ports:
+      - "7374:7474"   # HTTP Browser (避開 Windows 保留端口 7410-7509)
+      - "7687:7687"   # Bolt
+      - "2004:2004"   # Metrics
+    environment:
+      - NEO4J_AUTH=neo4j/linerag123
+      # 記憶體配置 (Neo4j 5.20 基本配置)
+      - NEO4J_server_memory_heap_initial__size=2G
+      - NEO4J_server_memory_heap_max__size=4G
+      - NEO4J_server_memory_pagecache_size=2G
+      # 安全設定和插件
+      - NEO4J_dbms_security_procedures_unrestricted=gds.*,apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=gds.*,apoc.*
+      - NEO4J_PLUGINS=["apoc", "graph-data-science"]
+      # Prometheus 監控配置
+      - NEO4J_server_metrics_enabled=true
+      - NEO4J_server_metrics_prometheus_enabled=true
+      - NEO4J_server_metrics_prometheus_endpoint=0.0.0.0:2004
+    volumes:
+      - ./neo4j_data:/data
+      - ./neo4j_logs:/logs
+      - ./neo4j_import:/var/lib/neo4j/import
+      - ./backups/neo4j:/backups
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "linerag123", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - linerag-network
 
+  # Prometheus 監控數據收集
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - linerag-network
+
+  # Grafana 監控 Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=linerag123
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - linerag-network
+    
 volumes:
   api_uploads:
     driver: local
   rag_storage:
+    driver: local
+  # 備份存儲
+  backups:
+    driver: local
+  # 監控數據存儲
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
 
 networks:
