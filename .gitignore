@@ -13,6 +13,13 @@ apps/api/vectorstore/
 /.turbo
 apps/api/local_qdrant
 qdrant_storage
+# neo4j_data
+# neo4j_logs
+# neo4j_import
+neo4j_data
+neo4j_logs
+neo4j_import
+
 # Uploads directory
 apps/api/uploads/
 # PDFs directory
