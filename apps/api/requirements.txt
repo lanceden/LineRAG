@@ -44,3 +44,6 @@ debugpy
 # Monitoring and metrics
 prometheus-client
 psutil
+
+# Email validation
+email-validator
