@@ -165,7 +165,7 @@ export interface CompanyActivity {
   company_id: string
   user_id?: number
   action: 'created' | 'updated' | 'activated' | 'deactivated' | 'user_invited' | 'user_joined' | 'settings_changed'
-  details?: Record<string, any>
+  details?: Record<string, unknown>
   ip_address?: string
   user_agent?: string
   created_at: string
@@ -197,7 +197,7 @@ export interface CompanyIntegration {
   company_id: string
   type: 'line' | 'webhook' | 'api'
   name: string
-  config: Record<string, any>
+  config: Record<string, unknown>
   is_active: boolean
   created_at: string
   updated_at: string

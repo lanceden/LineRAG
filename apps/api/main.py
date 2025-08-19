@@ -1,23 +1,30 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+import time
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Core utilities
 from app.core.logging import setup_logging
 from app.core.database import create_tables
-from app.core.middleware import JWTAuthMiddleware
+from app.core.middleware import PermissionMiddleware
 
 # Services (initialize on startup)
 from app.services.multitenant_rag import get_multitenant_rag_service
 
 # Routers
 from app.routers.health import router as health_router
+from app.routers.auth import router as auth_router
 from app.routers.ask import router as ask_router
 from app.routers.ingest import router as ingest_router
 from app.routers.webhook import router as webhook_router
 from app.routers.system_users import router as system_users_router
 from app.routers.tenant_users import router as tenant_users_router
 from app.routers.admin import router as admin_router
+from app.routers.companies import router as companies_router
+from app.routers.knowledge_graph import router as knowledge_graph_router
+from app.routers.metrics import router as metrics_router
+from app.routers.permissions import router as permissions_router
 
 
 @asynccontextmanager
@@ -55,7 +62,7 @@ app = FastAPI(
     root_path="/api",  # 添加 API 前綴支援 nginx 反向代理
 )
 
-# Configure CORS
+# Configure CORS FIRST (必須在其他中間件之前)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -64,17 +71,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add JWT authentication middleware
-app.add_middleware(JWTAuthMiddleware)
+
+# Add Metrics Middleware (before JWT for monitoring all requests)
+class MetricsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+
+        # Import here to avoid circular imports
+        from app.routers.metrics import record_request_metrics
+
+        record_request_metrics(request, response, process_time)
+
+        return response
+
+
+app.add_middleware(MetricsMiddleware)
+
+# Add JWT authentication middleware AFTER CORS and Metrics
+app.add_middleware(PermissionMiddleware)
 
 # Include modular routers
 app.include_router(health_router)
+app.include_router(auth_router)  # 認證路由不需要認證
 app.include_router(ask_router)
 app.include_router(ingest_router)
 app.include_router(webhook_router)
 app.include_router(system_users_router)
 app.include_router(tenant_users_router)
 app.include_router(admin_router)
+app.include_router(companies_router)
+app.include_router(knowledge_graph_router)
+app.include_router(metrics_router)
+app.include_router(permissions_router)
 
 
 # 支援直接運行調試

@@ -49,12 +49,5 @@ class Company(Base):
     documents = relationship("DocumentMetadata", back_populates="company")
     audit_logs = relationship("AuditLog", back_populates="company")
 
-    # 多對多關聯 - 可管理此公司的系統用戶
-    system_users = relationship(
-        "SystemUser",
-        secondary="user_company_access",
-        back_populates="accessible_companies",
-    )
-
     def __repr__(self):
         return f"<Company(id={self.id}, name='{self.name}', code='{self.code}')>"

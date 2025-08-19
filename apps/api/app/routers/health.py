@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from app.core.database import get_db
 from app.services.rag_anything import get_rag_service
 from app.services.multitenant_rag import get_multitenant_rag_service
+from app.services.neo4j_service import get_neo4j_service
 
 load_dotenv()
 
@@ -39,12 +40,23 @@ async def health_check(db: Session = Depends(get_db)):
     except Exception as e:
         db_status = f"error: {str(e)}"
 
+    # 測試 Neo4j 連接
+    neo4j_status = "ok"
+    try:
+        neo4j_service = get_neo4j_service()
+        if not neo4j_service.initialized:
+            await neo4j_service.initialize()
+        await neo4j_service.verify_connectivity()
+    except Exception as e:
+        neo4j_status = f"error: {str(e)}"
+
     status = {
         "api": "ok",
         "rag_anything": rag_service.get_status(),
         "multitenant_rag": "ok",
         "database": db_status,
-        "framework": "RAG-Anything + PostgreSQL Multi-Tenant",
+        "neo4j": neo4j_status,
+        "framework": "RAG-Anything + PostgreSQL + Neo4j Multi-Tenant",
         "version": "2.0.0",
     }
 

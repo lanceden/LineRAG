@@ -13,7 +13,6 @@ class CreateUserRequest(BaseModel):
     email: EmailStr
     password: str
     full_name: str
-    role: str = "admin"
 
 
 class UpdateUserRequest(BaseModel):
@@ -22,7 +21,6 @@ class UpdateUserRequest(BaseModel):
     email: Optional[EmailStr] = None
     password: Optional[str] = None  # 可選密碼更新
     full_name: Optional[str] = None
-    role: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -32,11 +30,9 @@ class UserResponse(BaseModel):
     username: str
     email: str
     full_name: str
-    role: str
     is_active: bool
     last_login: Optional[datetime] = None
-    created_at: datetime
-    accessible_companies: List[dict] = []
+    created_at: Optional[datetime] = None
 
 
 class UserListResponse(BaseModel):
@@ -51,5 +47,5 @@ class UserStatsResponse(BaseModel):
     """用戶統計響應"""
     total_users: int
     active_users: int
-    admin_users: int
-    new_users_this_month: int
+    inactive_users: int
+    users_this_month: int

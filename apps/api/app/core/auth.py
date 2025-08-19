@@ -1,17 +1,17 @@
 """
-JWT 認證系統
+JWT 認證服務
+只處理基本的認證功能：密碼驗證、JWT 生成/驗證、密碼雜湊
 """
 
 import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import jwt
+from jwt import PyJWTError, ExpiredSignatureError
 from passlib.context import CryptContext
-from fastapi import HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
 from app.models.system_user import SystemUser
 
 # JWT 設定
@@ -20,145 +20,71 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-# 密碼加密 - 兼容 bcrypt 4.x
+# 密碼加密
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
-# Bearer token security
-security = HTTPBearer()
+
+def authenticate_user(
+    db: Session, email_or_username: str, password: str
+) -> Optional[SystemUser]:
+    """驗證用戶登入 - 支援 email 或 username 登入"""
+    # 先嘗試用 email 查詢，再用 username 查詢
+    user = db.query(SystemUser).filter(SystemUser.email == email_or_username).first()
+    if not user:
+        user = db.query(SystemUser).filter(SystemUser.username == email_or_username).first()
+    if not user:
+        return None
+
+    if not AuthService.verify_password(password, user.password_hash):
+        return None
+
+    if not user.is_active:
+        return None
+
+    return user
 
 
 class AuthService:
-    """JWT 認證服務"""
-    
-    @staticmethod
-    def verify_password(plain_password: str, hashed_password: str) -> bool:
-        """驗證密碼"""
-        return pwd_context.verify(plain_password, hashed_password)
-    
-    @staticmethod
-    def get_password_hash(password: str) -> str:
-        """生成密碼雜湊"""
-        return pwd_context.hash(password)
-    
+    """認證服務 - 專注於 JWT 和密碼處理"""
+
     @staticmethod
     def create_access_token(data: Dict[str, Any]) -> str:
-        """生成 Access Token"""
+        """創建訪問令牌"""
         to_encode = data.copy()
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        to_encode.update({"exp": expire, "type": "access"})
-        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-        return encoded_jwt
-    
+        to_encode.update({"exp": expire})
+        return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
     @staticmethod
     def create_refresh_token(data: Dict[str, Any]) -> str:
-        """生成 Refresh Token"""
+        """創建刷新令牌"""
         to_encode = data.copy()
         expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-        to_encode.update({"exp": expire, "type": "refresh"})
-        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-        return encoded_jwt
-    
+        to_encode.update({"exp": expire})
+        return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
     @staticmethod
-    def verify_token(token: str, expected_type: str = "access") -> Dict[str, Any]:
-        """驗證 Token"""
+    def verify_token(token: str) -> Dict[str, Any]:
+        """驗證 JWT token - 中間件使用"""
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            token_type = payload.get("type")
-            
-            if token_type != expected_type:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token type"
-                )
-            
             return payload
-            
-        except jwt.ExpiredSignatureError:
+        except ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired"
+            )
+        except PyJWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has expired"
-            )
-        except jwt.JWTError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials"
+                detail="Could not validate token",
             )
 
+    @staticmethod
+    def get_password_hash(password: str) -> str:
+        """生成密碼雜湊 - 創建用戶時使用"""
+        return pwd_context.hash(password)
 
-def authenticate_user(email: str, password: str, db: Session) -> Optional[SystemUser]:
-    """用戶認證"""
-    user = db.query(SystemUser).filter(
-        SystemUser.email == email,
-        SystemUser.is_active == True
-    ).first()
-    
-    if not user:
-        return None
-    
-    if not AuthService.verify_password(password, user.password_hash):
-        return None
-    
-    return user
-
-
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
-) -> SystemUser:
-    """獲取當前認證用戶"""
-    token = credentials.credentials
-    payload = AuthService.verify_token(token)
-    
-    user_id = payload.get("user_id")
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials"
-        )
-    
-    user = db.query(SystemUser).filter(SystemUser.id == user_id).first()
-    if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive"
-        )
-    
-    return user
-
-
-def require_admin(current_user: SystemUser = Depends(get_current_user)) -> SystemUser:
-    """要求管理員權限"""
-    if current_user.role not in ["admin", "super_admin"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin permission required"
-        )
-    return current_user
-
-
-def require_super_admin(current_user: SystemUser = Depends(get_current_user)) -> SystemUser:
-    """要求超級管理員權限"""
-    if current_user.role != "super_admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Super admin permission required"
-        )
-    return current_user
-
-
-def check_company_access(company_id: int, current_user: SystemUser = Depends(get_current_user)) -> SystemUser:
-    """檢查用戶是否有權限訪問指定公司"""
-    # 超級管理員可以訪問所有公司
-    if current_user.role == "super_admin":
-        return current_user
-    
-    # 檢查用戶是否有該公司的訪問權限
-    accessible_company_ids = [company.id for company in current_user.accessible_companies]
-    
-    if company_id not in accessible_company_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"No permission to access company {company_id}"
-        )
-    
-    return current_user
+    @staticmethod
+    def verify_password(plain_password: str, hashed_password: str) -> bool:
+        """驗證密碼 - 登入時使用"""
+        return pwd_context.verify(plain_password, hashed_password)

@@ -3,14 +3,15 @@
  */
 
 import { useState, useEffect } from 'react'
-import { usersApi, User, UserListResponse, UserStatsResponse, CreateUserRequest, UpdateUserRequest } from '@/lib/api/users'
+import { usersApi } from '@/lib/api/usersApi'
+import type { User, UserListResponse, UserStatsResponse, CreateUserRequest, UpdateUserRequest } from '@/types/user'
 
 // 用戶列表 hook
 export function useUsers(params: {
   page?: number
-  page_size?: number
-  role?: string
+  limit?: number
   search?: string
+  is_active?: boolean
 } = {}) {
   const [data, setData] = useState<UserListResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -20,7 +21,7 @@ export function useUsers(params: {
     try {
       setLoading(true)
       setError(null)
-      const result = await usersApi.getUsers(params)
+      const result = await usersApi.getList(params)
       setData(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch users')
@@ -31,7 +32,7 @@ export function useUsers(params: {
 
   useEffect(() => {
     fetchUsers()
-  }, [params.page, params.page_size, params.role, params.search])
+  }, [params.page, params.limit, params.search, params.is_active])
 
   return {
     data,
@@ -51,7 +52,7 @@ export function useUserStats() {
     try {
       setLoading(true)
       setError(null)
-      const result = await usersApi.getUserStats()
+      const result = await usersApi.getStats()
       setData(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch user stats')
@@ -81,7 +82,7 @@ export function useUserActions() {
     try {
       setLoading(true)
       setError(null)
-      const result = await usersApi.createUser(userData)
+      const result = await usersApi.create(userData)
       return result
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user')
@@ -95,7 +96,7 @@ export function useUserActions() {
     try {
       setLoading(true)
       setError(null)
-      const result = await usersApi.updateUser(userId, userData)
+      const result = await usersApi.update(userId, userData)
       return result
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update user')
@@ -109,7 +110,7 @@ export function useUserActions() {
     try {
       setLoading(true)
       setError(null)
-      await usersApi.deleteUser(userId)
+      await usersApi.delete(userId)
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete user')
@@ -119,33 +120,6 @@ export function useUserActions() {
     }
   }
 
-  const grantCompanyAccess = async (companyId: number, userId: number): Promise<boolean> => {
-    try {
-      setLoading(true)
-      setError(null)
-      await usersApi.grantCompanyAccess(companyId, userId)
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to grant company access')
-      return false
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const revokeCompanyAccess = async (companyId: number, userId: number): Promise<boolean> => {
-    try {
-      setLoading(true)
-      setError(null)
-      await usersApi.revokeCompanyAccess(companyId, userId)
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to revoke company access')
-      return false
-    } finally {
-      setLoading(false)
-    }
-  }
 
   return {
     loading,
@@ -153,7 +127,5 @@ export function useUserActions() {
     createUser,
     updateUser,
     deleteUser,
-    grantCompanyAccess,
-    revokeCompanyAccess,
   }
 }

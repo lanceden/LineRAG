@@ -1,49 +1,76 @@
 """
-Admin API routes - 多租戶管理功能
+系統管理 API 路由
+權限檢查由 PermissionMiddleware 自動處理
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.middleware import get_current_user
 from app.models.company import Company
 from app.models.system_user import SystemUser
 from app.services.multitenant_user import get_multitenant_user_service
 
-router = APIRouter(prefix="/admin", tags=["管理"])
+router = APIRouter(prefix="/admin", tags=["系統管理"])
 
 
 @router.get("/companies")
-async def list_all_companies(request: Request, db: Session = Depends(get_db)):
-    """獲取所有公司列表（管理員功能）"""
-    from app.core.middleware import require_admin_permission
-    current_user = require_admin_permission(request)
+async def list_all_companies(
+    db: Session = Depends(get_db),
+    current_user: SystemUser = Depends(get_current_user),
+):
+    """獲取所有公司列表 - 需要 company.view 權限"""
     companies = db.query(Company).all()
     return [
         {
             "id": company.id,
             "name": company.name,
             "code": company.code,
-            "subscription_plan": company.subscription_plan,
             "is_active": company.is_active,
-            "created_at": company.created_at
+            "created_at": company.created_at,
         }
         for company in companies
     ]
 
 
-@router.get("/system-stats")
-async def get_system_stats(request: Request, db: Session = Depends(get_db)):
-    """獲取系統統計資訊"""
-    from app.core.middleware import require_admin_permission
-    current_user = require_admin_permission(request)
+@router.get("/users")
+async def list_all_users(
+    db: Session = Depends(get_db),
+    current_user: SystemUser = Depends(get_current_user),
+):
+    """獲取所有系統用戶列表 - 需要 user.view 權限"""
+    users = db.query(SystemUser).all()
+    return [
+        {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "full_name": user.full_name,
+            "is_active": user.is_active,
+            "created_at": user.created_at,
+        }
+        for user in users
+    ]
+
+
+@router.get("/system-info")
+async def get_system_info(
+    db: Session = Depends(get_db),
+    current_user: SystemUser = Depends(get_current_user),
+):
+    """獲取系統資訊 - 需要 system.analytics.view 權限"""
     total_companies = db.query(Company).count()
     active_companies = db.query(Company).filter(Company.is_active == True).count()
-    total_admins = db.query(SystemUser).count()
-    
+    total_users = db.query(SystemUser).count()
+    active_users = db.query(SystemUser).filter(SystemUser.is_active == True).count()
+
     return {
-        "total_companies": total_companies,
-        "active_companies": active_companies,
-        "total_system_users": total_admins,
-        "framework": "RAG-Anything + PostgreSQL Multi-Tenant",
-        "version": "2.0.0"
+        "companies": {
+            "total": total_companies,
+            "active": active_companies,
+        },
+        "users": {
+            "total": total_users,
+            "active": active_users,
+        },
     }

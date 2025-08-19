@@ -4,21 +4,7 @@ import { useSession, signOut } from "next-auth/react"
 import { usePathname, useParams } from "next/navigation"
 import Link from "next/link"
 import { useState, useMemo } from "react"
-import {
-  getAdminFeatures,
-  getCompanyFeatures,
-  type FeatureCard,
-} from "@/config/features"
 import { CompanySelector } from "./CompanySelector"
-
-// 將功能卡片轉換為導航項目
-function featureToNavItem(feature: FeatureCard) {
-  return {
-    name: feature.title.replace(/^[^\s]+\s/, ""), // 移除 emoji
-    href: feature.href || "",
-    icon: feature.title.match(/^[^\s]+/)?.[0] || "📄", // 提取 emoji
-  }
-}
 
 export function Sidebar() {
   const { data: session } = useSession()
@@ -26,28 +12,28 @@ export function Sidebar() {
   const params = useParams()
   const [isCollapsed, setIsCollapsed] = useState(false)
 
-  // 根據用戶角色和當前路徑決定顯示的導航
+  // 固定選單 - 所有用戶都能看到所有選單項目
   const navigation = useMemo(() => {
     if (!session) return []
 
-    const userRole = session.user.role || ""
-    const userCompanies = session.user.companies || []
     const currentCompanyId = params.companyId as string
-    const nav = []
+    
+    // 固定的選單項目
+    const nav = [
+      { name: "公司管理", href: "/multitenantrag/admin/companies", icon: "🏢" },
+      { name: "用戶管理", href: "/multitenantrag/admin/users", icon: "👥" },
+      { name: "權限管理", href: "/multitenantrag/admin/permissions", icon: "🔐" },
+      { name: "文檔管理", href: "/multitenantrag/admin/documents", icon: "📄" },
+      { name: "系統監控", href: "/multitenantrag/admin/monitoring", icon: "📊" },
+    ]
 
-    // Super Admin 可以看到系統管理導航
-    if (userRole === "super_admin") {
-      const adminFeatures = getAdminFeatures(userRole)
-      nav.push(...adminFeatures.map(featureToNavItem))
-    }
-
-    // 如果有當前公司 ID 或用戶有公司權限，顯示公司導航
-    if (currentCompanyId || userCompanies.length > 0) {
-      const companyId = currentCompanyId || userCompanies[0]?.id
-      if (companyId) {
-        const companyFeatures = getCompanyFeatures(userRole, companyId)
-        nav.push(...companyFeatures.map(featureToNavItem))
-      }
+    // 如果有選定公司，加入公司相關選單
+    if (currentCompanyId) {
+      nav.push(
+        { name: "公司儀表板", href: `/multitenantrag/company/${currentCompanyId}`, icon: "📊" },
+        { name: "對話記錄", href: `/multitenantrag/company/${currentCompanyId}/chats`, icon: "💬" },
+        { name: "公司設定", href: `/multitenantrag/company/${currentCompanyId}/settings`, icon: "⚙️" }
+      )
     }
 
     return nav
@@ -86,6 +72,7 @@ export function Sidebar() {
         <ul className="space-y-1">
           {navigation.map((item) => {
             const isActive = pathname === item.href
+            
             return (
               <li key={item.name}>
                 <Link
@@ -111,7 +98,6 @@ export function Sidebar() {
             <p className="text-sm font-medium text-gray-900">
               {session.user.name}
             </p>
-            <p className="text-xs text-gray-500">{session.user.role}</p>
           </div>
         )}
         <button

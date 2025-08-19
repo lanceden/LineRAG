@@ -13,6 +13,7 @@ import {
   Loader2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { InputWithIcon, TextAreaWithIcon } from '@/components/ui/InputWithIcon'
 import type { Company, CreateCompanyRequest, UpdateCompanyRequest } from '@/types/company'
 
 interface CompanyFormProps {
@@ -182,100 +183,52 @@ export function CompanyForm({
       {/* 基本資訊 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* 公司名稱 */}
-        <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-            公司名稱 <span className="text-red-500">*</span>
-          </label>
-          <div className="relative">
-            <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              id="name"
-              value={formData.name}
-              onChange={(e) => handleInputChange('name', e.target.value)}
-              className={cn(
-                'pl-10 w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent',
-                errors.name ? 'border-red-300' : 'border-gray-300'
-              )}
-              placeholder="請輸入公司名稱"
-            />
-          </div>
-          {errors.name && (
-            <p className="mt-1 text-sm text-red-600">{errors.name}</p>
-          )}
-        </div>
+        <InputWithIcon
+          icon={Building2}
+          type="text"
+          id="name"
+          label="公司名稱 *"
+          value={formData.name}
+          onChange={(e) => handleInputChange('name', e.target.value)}
+          placeholder="請輸入公司名稱"
+          error={errors.name}
+        />
 
         {/* 電子郵件 */}
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-            電子郵件
-          </label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="email"
-              id="email"
-              value={formData.email}
-              onChange={(e) => handleInputChange('email', e.target.value)}
-              className={cn(
-                'pl-10 w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent',
-                errors.email ? 'border-red-300' : 'border-gray-300'
-              )}
-              placeholder="company@example.com"
-            />
-          </div>
-          {errors.email && (
-            <p className="mt-1 text-sm text-red-600">{errors.email}</p>
-          )}
-        </div>
+        <InputWithIcon
+          icon={Mail}
+          type="email"
+          id="email"
+          label="電子郵件"
+          value={formData.email}
+          onChange={(e) => handleInputChange('email', e.target.value)}
+          placeholder="company@example.com"
+          error={errors.email}
+        />
 
         {/* 電話號碼 */}
-        <div>
-          <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
-            電話號碼
-          </label>
-          <div className="relative">
-            <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="tel"
-              id="phone"
-              value={formData.phone}
-              onChange={(e) => handleInputChange('phone', e.target.value)}
-              className={cn(
-                'pl-10 w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent',
-                errors.phone ? 'border-red-300' : 'border-gray-300'
-              )}
-              placeholder="02-1234-5678"
-            />
-          </div>
-          {errors.phone && (
-            <p className="mt-1 text-sm text-red-600">{errors.phone}</p>
-          )}
-        </div>
+        <InputWithIcon
+          icon={Phone}
+          type="tel"
+          id="phone"
+          label="電話號碼"
+          value={formData.phone}
+          onChange={(e) => handleInputChange('phone', e.target.value)}
+          placeholder="02-1234-5678"
+          error={errors.phone}
+        />
 
         {/* 網站 */}
-        <div>
-          <label htmlFor="website" className="block text-sm font-medium text-gray-700 mb-1">
-            公司網站
-          </label>
-          <div className="relative">
-            <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="url"
-              id="website"
-              value={formData.website}
-              onChange={(e) => handleInputChange('website', e.target.value)}
-              className={cn(
-                'pl-10 w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent',
-                errors.website ? 'border-red-300' : 'border-gray-300'
-              )}
-              placeholder="https://www.example.com"
-            />
-          </div>
-          {errors.website && (
-            <p className="mt-1 text-sm text-red-600">{errors.website}</p>
-          )}
-        </div>
+        <InputWithIcon
+          icon={Globe}
+          type="url"
+          id="website"
+          label="公司網站"
+          value={formData.website}
+          onChange={(e) => handleInputChange('website', e.target.value)}
+          placeholder="https://www.example.com"
+          error={errors.website}
+        />
       </div>
 
       {/* 公司描述 */}
@@ -294,22 +247,15 @@ export function CompanyForm({
       </div>
 
       {/* 地址 */}
-      <div>
-        <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1">
-          公司地址
-        </label>
-        <div className="relative">
-          <MapPin className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-          <textarea
-            id="address"
-            rows={2}
-            value={formData.address}
-            onChange={(e) => handleInputChange('address', e.target.value)}
-            className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="請輸入完整地址..."
-          />
-        </div>
-      </div>
+      <TextAreaWithIcon
+        icon={MapPin}
+        id="address"
+        rows={2}
+        label="公司地址"
+        value={formData.address}
+        onChange={(e) => handleInputChange('address', e.target.value)}
+        placeholder="請輸入完整地址..."
+      />
 
       {/* 操作按鈕 */}
       <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">

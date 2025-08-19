@@ -17,6 +17,7 @@ class Message(BaseModel):
 
 class AskRequest(BaseModel):
     messages: List[Message]
+    company_id: int  # 必須提供公司 ID
     trigger: Optional[str] = None
 
 
@@ -41,4 +42,5 @@ class MultimodalAskRequest(BaseModel):
 
     messages: List[Message]
     multimodal_content: List[MultimodalContent]
+    company_id: int  # 必須提供公司 ID
     trigger: Optional[str] = None

@@ -1,6 +1,6 @@
 "use client"
 
-import { User } from '@/lib/api/users'
+import { User } from '@/types/user'
 import { useState } from 'react'
 
 interface UserTableProps {
@@ -8,34 +8,12 @@ interface UserTableProps {
   loading: boolean
   onEdit: (user: User) => void
   onDelete: (user: User) => void
+  onManagePermissions: (user: User) => void
+  onToggleStatus: (user: User) => void
 }
 
-export function UserTable({ users, loading, onEdit, onDelete }: UserTableProps) {
-  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
-
-  const getRoleBadge = (role: string) => {
-    const roleStyles = {
-      super_admin: 'bg-red-100 text-red-800',
-      admin: 'bg-blue-100 text-blue-800',
-      company_admin: 'bg-green-100 text-green-800',
-      cs_manager: 'bg-yellow-100 text-yellow-800',
-      cs_agent: 'bg-gray-100 text-gray-800',
-    }
-    
-    const roleNames = {
-      super_admin: '超級管理員',
-      admin: '管理員',
-      company_admin: '公司管理員',
-      cs_manager: '客服經理',
-      cs_agent: '客服人員',
-    }
-
-    return (
-      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${roleStyles[role as keyof typeof roleStyles] || roleStyles.cs_agent}`}>
-        {roleNames[role as keyof typeof roleNames] || role}
-      </span>
-    )
-  }
+export function UserTable({ users, loading, onEdit, onDelete, onManagePermissions, onToggleStatus }: UserTableProps) {
+  const [actionLoading, setActionLoading] = useState<number | null>(null)
 
   const getStatusBadge = (isActive: boolean) => {
     return (
@@ -48,202 +26,173 @@ export function UserTable({ users, loading, onEdit, onDelete }: UserTableProps) 
   }
 
   const formatDate = (dateString?: string) => {
-    if (!dateString) return '從未登入'
-    
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMinutes = Math.floor(diffMs / (1000 * 60))
-    
-    if (diffMinutes < 5) return '剛剛'
-    if (diffMinutes < 60) return `${diffMinutes} 分鐘前`
-    if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} 小時前`
-    
-    return date.toLocaleDateString('zh-TW')
+    if (!dateString) return '-'
+    return new Date(dateString).toLocaleDateString('zh-TW', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
 
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+  const handleToggleStatus = async (user: User) => {
+    setActionLoading(user.id)
+    await onToggleStatus(user)
+    setActionLoading(null)
   }
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用戶</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">可訪問公司</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">狀態</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最後登入</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            <tr>
-              <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                <div className="flex flex-col items-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
-                  <p className="text-lg font-medium">載入用戶資料中...</p>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    )
-  }
-
-  if (users.length === 0) {
-    return (
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用戶</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">可訪問公司</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">狀態</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最後登入</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            <tr>
-              <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                <div className="flex flex-col items-center">
-                  <svg className="h-12 w-12 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-                  </svg>
-                  <p className="text-lg font-medium">沒有找到用戶</p>
-                  <p className="text-sm">請嘗試修改搜尋條件或新增用戶</p>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-6 py-12">
+          <div className="flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            <span className="ml-2 text-gray-600">載入中...</span>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="bg-white rounded-lg shadow overflow-hidden">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              用戶
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              角色
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              可訪問公司
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              狀態
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              最後登入
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              操作
-            </th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {users.map((user) => (
-            <tr key={user.id} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="flex items-center">
-                  <div className="h-10 w-10 flex-shrink-0">
-                    <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center">
-                      <span className="text-white font-medium text-sm">
-                        {getInitials(user.full_name)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="ml-4">
-                    <div className="text-sm font-medium text-gray-900">
-                      {user.full_name}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {user.email}
-                    </div>
-                    <div className="text-xs text-gray-400">
-                      @{user.username}
-                    </div>
-                  </div>
-                </div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                {getRoleBadge(user.role)}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {user.accessible_companies.length > 0 ? (
-                  <div>
-                    {user.role === 'super_admin' ? (
-                      <span className="text-blue-600 font-medium">所有公司</span>
-                    ) : (
-                      user.accessible_companies.map(company => (
-                        <span key={company.id} className="inline-block bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded mr-1 mb-1">
-                          {company.name}
-                        </span>
-                      ))
-                    )}
-                    <span className="text-gray-400">({user.accessible_companies.length})</span>
-                  </div>
-                ) : (
-                  <span className="text-gray-400">無權限</span>
-                )}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                {getStatusBadge(user.is_active)}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {formatDate(user.last_login)}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                <div className="flex items-center space-x-2">
-                  <button 
-                    onClick={() => onEdit(user)}
-                    className="text-blue-600 hover:text-blue-900 transition-colors"
-                  >
-                    編輯
-                  </button>
-                  {deleteConfirm === user.id ? (
-                    <div className="flex items-center space-x-1">
-                      <button 
-                        onClick={() => {
-                          onDelete(user)
-                          setDeleteConfirm(null)
-                        }}
-                        className="text-red-600 hover:text-red-900 text-xs bg-red-50 px-2 py-1 rounded"
-                      >
-                        確認
-                      </button>
-                      <button 
-                        onClick={() => setDeleteConfirm(null)}
-                        className="text-gray-600 hover:text-gray-900 text-xs bg-gray-50 px-2 py-1 rounded"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  ) : (
-                    <button 
-                      onClick={() => setDeleteConfirm(user.id)}
-                      className="text-red-600 hover:text-red-900 transition-colors"
-                    >
-                      刪除
-                    </button>
-                  )}
-                </div>
-              </td>
+    <div className="bg-white shadow overflow-hidden rounded-lg">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                用戶資訊
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                聯絡方式
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                狀態
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                最後登入
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                建立時間
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                操作
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {users.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                  沒有找到任何用戶
+                </td>
+              </tr>
+            ) : (
+              users.map((user) => (
+                <tr key={user.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 h-10 w-10">
+                        <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center">
+                          <span className="text-sm font-medium text-white">
+                            {user.full_name.charAt(0)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="ml-4">
+                        <div className="text-sm font-medium text-gray-900">
+                          {user.full_name}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          @{user.username}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{user.email}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {getStatusBadge(user.is_active)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {formatDate(user.last_login)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {formatDate(user.created_at)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <div className="flex justify-end space-x-2">
+                      {/* 權限管理按鈕 */}
+                      <button
+                        onClick={() => onManagePermissions(user)}
+                        className="text-blue-600 hover:text-blue-900 p-1 rounded"
+                        title="管理權限"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                      </button>
+
+                      {/* 編輯按鈕 */}
+                      <button
+                        onClick={() => onEdit(user)}
+                        className="text-indigo-600 hover:text-indigo-900 p-1 rounded"
+                        title="編輯用戶"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+
+                      {/* 啟用/停用按鈕 */}
+                      <button
+                        onClick={() => handleToggleStatus(user)}
+                        disabled={actionLoading === user.id}
+                        className={`p-1 rounded ${
+                          user.is_active 
+                            ? 'text-yellow-600 hover:text-yellow-900' 
+                            : 'text-green-600 hover:text-green-900'
+                        } disabled:opacity-50`}
+                        title={user.is_active ? "停用用戶" : "啟用用戶"}
+                      >
+                        {actionLoading === user.id ? (
+                          <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
+                        ) : user.is_active ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                              d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L5.636 5.636" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        )}
+                      </button>
+
+                      {/* 刪除按鈕 */}
+                      <button
+                        onClick={() => onDelete(user)}
+                        className="text-red-600 hover:text-red-900 p-1 rounded"
+                        title="刪除用戶"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

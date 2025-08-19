@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { api } from '@/lib/api/client'
+import { companiesApi } from '@/lib/api'
 import type {
   Company,
   CompanyListParams,
@@ -12,7 +12,6 @@ import type {
   UpdateCompanyRequest,
   CompanyStats,
   CompanySettings,
-  CompanyUser,
   CompanyUserListResponse,
   InviteUserRequest,
 } from '@/types/company'
@@ -30,19 +29,8 @@ export function useCompanies(params?: CompanyListParams) {
     setError(null)
 
     try {
-      // 使用統一 API 獲取公司列表
-      const companies = await api.admin.getCompanies()
-
-      // 轉換為標準的分頁回應格式
-      const response: CompanyListResponse = {
-        companies,
-        total: companies.length,
-        page: params?.page || 1,
-        limit: params?.limit || 20,
-        has_next: false,
-        has_prev: false,
-      }
-
+      // 使用新的公司管理 API
+      const response = await companiesApi.getList(params)
       setData(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : '獲取公司列表失敗')
@@ -77,7 +65,7 @@ export function useCompanies(params?: CompanyListParams) {
  */
 export function useCompany(companyId: string | null) {
   const [company, setCompany] = useState<Company | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(!!companyId)
   const [error, setError] = useState<string | null>(null)
 
   const fetchCompany = useCallback(async () => {
@@ -87,7 +75,7 @@ export function useCompany(companyId: string | null) {
     setError(null)
 
     try {
-      const response = await companies.get(companyId)
+      const response = await companiesApi.getById(parseInt(companyId))
       setCompany(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : '獲取公司資訊失敗')
@@ -124,7 +112,7 @@ export function useCompanyOperations() {
     setError(null)
 
     try {
-      const response = await companies.create(data)
+      const response = await companiesApi.create(data)
       return response
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '建立公司失敗'
@@ -140,7 +128,7 @@ export function useCompanyOperations() {
     setError(null)
 
     try {
-      const response = await companies.update(companyId, data)
+      const response = await companiesApi.update(parseInt(companyId), data)
       return response
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '更新公司失敗'
@@ -156,7 +144,7 @@ export function useCompanyOperations() {
     setError(null)
 
     try {
-      const response = await companies.delete(companyId)
+      const response = await companiesApi.delete(parseInt(companyId))
       return response
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '刪除公司失敗'
@@ -172,7 +160,7 @@ export function useCompanyOperations() {
     setError(null)
 
     try {
-      const response = await companies.activate(companyId)
+      const response = await companiesApi.activate(parseInt(companyId))
       return response
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '啟用公司失敗'
@@ -188,7 +176,7 @@ export function useCompanyOperations() {
     setError(null)
 
     try {
-      const response = await companies.deactivate(companyId)
+      const response = await companiesApi.deactivate(parseInt(companyId))
       return response
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '停用公司失敗'
@@ -225,7 +213,7 @@ export function useCompanyStats(companyId: string | null) {
     setError(null)
 
     try {
-      const response = await companies.stats(companyId)
+      const response = await companiesApi.getStats(parseInt(companyId))
       setStats(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : '獲取統計資訊失敗')
@@ -265,7 +253,7 @@ export function useCompanySettings(companyId: string | null) {
     setError(null)
 
     try {
-      const response = await companies.settings.get(companyId)
+      const response = await companiesApi.getStats(parseInt(companyId))
       setSettings(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : '獲取公司設定失敗')
@@ -281,7 +269,7 @@ export function useCompanySettings(companyId: string | null) {
     setError(null)
 
     try {
-      const response = await companies.settings.update(companyId, newSettings)
+      const response = await companiesApi.update(parseInt(companyId), { settings: newSettings })
       setSettings(response)
       return response
     } catch (err) {
@@ -325,7 +313,7 @@ export function useCompanyUsers(companyId: string | null) {
     setError(null)
 
     try {
-      const response = await companies.users.list(companyId)
+      const response = await companiesApi.getUsers(parseInt(companyId))
       setData(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : '獲取用戶列表失敗')
@@ -341,7 +329,7 @@ export function useCompanyUsers(companyId: string | null) {
     setError(null)
 
     try {
-      const response = await companies.users.invite(companyId, userData)
+      const response = await companiesApi.inviteUser(parseInt(companyId), userData)
       await fetchUsers() // 重新獲取用戶列表
       return response
     } catch (err) {
@@ -360,7 +348,7 @@ export function useCompanyUsers(companyId: string | null) {
     setError(null)
 
     try {
-      const response = await companies.users.remove(companyId, userId)
+      const response = await companiesApi.removeUser(parseInt(companyId), userId)
       await fetchUsers() // 重新獲取用戶列表
       return response
     } catch (err) {
@@ -379,7 +367,7 @@ export function useCompanyUsers(companyId: string | null) {
     setError(null)
 
     try {
-      const response = await companies.users.updateRole(companyId, userId, role)
+      const response = await companiesApi.updateUserRole(parseInt(companyId), userId, role)
       await fetchUsers() // 重新獲取用戶列表
       return response
     } catch (err) {

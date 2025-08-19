@@ -18,7 +18,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         try {
           const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-          const response = await fetch(`${apiUrl}/api/system-users/login`, {
+          const response = await fetch(`${apiUrl}/api/auth/login`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -36,7 +36,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               id: userData.id,
               email: userData.email,
               name: userData.full_name,
-              role: userData.role,
               isActive: userData.is_active,
               companies: loginData.accessible_companies || [],
               accessToken: loginData.access_token, // 保存後端的 access_token
@@ -54,7 +53,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.role = user.role
         token.isActive = user.isActive
         token.companies = user.companies
         token.accessToken = user.accessToken // 保存 access_token 到 JWT
@@ -63,7 +61,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.role = token.role as string
         session.user.isActive = token.isActive as boolean
         session.user.companies = token.companies as Array<{
           id: string

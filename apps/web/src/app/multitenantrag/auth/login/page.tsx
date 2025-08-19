@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { signIn, useSession } from "next-auth/react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -20,15 +20,34 @@ export default function LoginPage() {
   const [error, setError] = useState("")
   const router = useRouter()
   const { data: session } = useSession()
+  const searchParams = useSearchParams()
 
   // 監聽 session 變化，登入成功後自動重定向
   useEffect(() => {
     console.log('Login page - session status:', session)
     if (session?.user) {
-      console.log('User logged in, redirecting to admin panel')
-      router.push("/multitenantrag/admin")
+      // 檢查是否有保存的重定向路徑
+      const savedRedirectPath = sessionStorage.getItem('redirectAfterLogin')
+      const redirectPath = savedRedirectPath || "/multitenantrag/admin"
+      
+      console.log('User logged in, redirecting to:', redirectPath)
+      
+      // 清除保存的重定向路徑
+      if (savedRedirectPath) {
+        sessionStorage.removeItem('redirectAfterLogin')
+      }
+      
+      router.push(redirectPath)
     }
   }, [session, router])
+
+  // 檢查是否是因為 session 過期而重定向到登入頁面
+  useEffect(() => {
+    const reason = searchParams.get('reason')
+    if (reason === 'session_expired') {
+      setError('登入已過期，請重新登入')
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

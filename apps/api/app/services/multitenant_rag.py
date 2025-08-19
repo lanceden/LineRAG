@@ -3,7 +3,7 @@
 """
 
 import os
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from pathlib import Path
 from app.services.rag_anything import RAGAnythingService
 from app.models.company import Company
@@ -81,6 +81,145 @@ class MultiTenantRAGService:
         """清理所有 RAG 服務"""
         for company_id in list(self.tenant_services.keys()):
             await self.cleanup_company_service(company_id)
+
+    async def check_company_quota(self, company_id: int, db: Session) -> Dict[str, any]:
+        """檢查公司配額限制（完整實作）"""
+        try:
+            # 檢查文檔數量限制
+            from app.models.document import Document
+
+            doc_count = (
+                db.query(Document).filter(Document.company_id == company_id).count()
+            )
+
+            max_documents = 1000  # 預設限制
+            doc_usage_percent = (doc_count / max_documents) * 100
+
+            # 檢查存儲空間使用
+            working_dir = f"./rag_storage/company_{company_id}"
+            storage_usage = 0
+
+            if os.path.exists(working_dir):
+                storage_usage = sum(
+                    os.path.getsize(os.path.join(dirpath, filename))
+                    for dirpath, dirnames, filenames in os.walk(working_dir)
+                    for filename in filenames
+                )
+
+            max_storage = 5 * 1024 * 1024 * 1024  # 5GB 限制
+            storage_usage_percent = (storage_usage / max_storage) * 100
+
+            return {
+                "company_id": company_id,
+                "documents": {
+                    "current": doc_count,
+                    "limit": max_documents,
+                    "usage_percent": doc_usage_percent,
+                    "available": max_documents - doc_count,
+                },
+                "storage": {
+                    "current_bytes": storage_usage,
+                    "current_mb": storage_usage / 1024 / 1024,
+                    "limit_bytes": max_storage,
+                    "limit_mb": max_storage / 1024 / 1024,
+                    "usage_percent": storage_usage_percent,
+                    "available_mb": (max_storage - storage_usage) / 1024 / 1024,
+                },
+                "warnings": self._get_quota_warnings(
+                    doc_usage_percent, storage_usage_percent
+                ),
+            }
+
+        except Exception as e:
+            return {
+                "company_id": company_id,
+                "error": f"Failed to check quota: {str(e)}",
+            }
+
+    def _get_quota_warnings(self, doc_usage: float, storage_usage: float) -> List[str]:
+        """取得配額警告"""
+        warnings = []
+
+        if doc_usage > 90:
+            warnings.append("Document limit nearly reached (>90%)")
+        elif doc_usage > 80:
+            warnings.append("Document usage high (>80%)")
+
+        if storage_usage > 90:
+            warnings.append("Storage limit nearly reached (>90%)")
+        elif storage_usage > 80:
+            warnings.append("Storage usage high (>80%)")
+
+        return warnings
+
+    def get_tenant_stats(self) -> Dict[str, any]:
+        """取得多租戶統計資訊（完整實作）"""
+        try:
+            memory_usage = self._get_memory_usage()
+
+            return {
+                "active_tenants": len(self.tenant_services),
+                "tenant_list": list(self.tenant_services.keys()),
+                "memory_usage": memory_usage,
+                "system_info": {
+                    "total_services": len(self.tenant_services),
+                    "service_status": {
+                        company_id: service.get_status()
+                        for company_id, service in self.tenant_services.items()
+                    },
+                },
+            }
+        except Exception as e:
+            return {"error": f"Failed to get tenant stats: {str(e)}"}
+
+    def _get_memory_usage(self) -> Dict[str, float]:
+        """取得記憶體使用情況"""
+        try:
+            import psutil
+
+            process = psutil.Process()
+            memory_info = process.memory_info()
+
+            return {
+                "rss_mb": memory_info.rss / 1024 / 1024,  # 實際記憶體使用
+                "vms_mb": memory_info.vms / 1024 / 1024,  # 虛擬記憶體使用
+                "percent": process.memory_percent(),
+            }
+        except ImportError:
+            return {"rss_mb": 0, "vms_mb": 0, "percent": 0}
+
+    async def cleanup_inactive_services(self, max_idle_time: int = 3600):
+        """清理閒置的服務實例（完整實作）"""
+        try:
+            import time
+
+            current_time = time.time()
+
+            inactive_companies = []
+            for company_id, service in self.tenant_services.items():
+                # 檢查服務最後使用時間
+                if hasattr(service, "last_used_time"):
+                    if current_time - service.last_used_time > max_idle_time:
+                        inactive_companies.append(company_id)
+                elif not service.initialized:
+                    # 未初始化的服務也視為閒置
+                    inactive_companies.append(company_id)
+
+            # 清理閒置服務
+            cleanup_count = 0
+            for company_id in inactive_companies:
+                await self.cleanup_company_service(company_id)
+                cleanup_count += 1
+                print(f"Cleaned up inactive service for company {company_id}")
+
+            return {
+                "cleaned_up": cleanup_count,
+                "remaining_active": len(self.tenant_services),
+                "inactive_companies": inactive_companies,
+            }
+
+        except Exception as e:
+            return {"error": f"Failed to cleanup inactive services: {str(e)}"}
 
 
 # 全域單例

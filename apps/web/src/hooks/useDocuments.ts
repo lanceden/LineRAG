@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { documents } from '@/lib/api/documents'
+import { documentsApi } from '@/lib/api'
 import type {
   DocumentMetadata,
   DocumentListParams,
@@ -29,7 +29,11 @@ export function useDocuments(params: DocumentListParams) {
     setError(null)
     
     try {
-      const response = await documents.getList(params)
+      const response = await documentsApi.getCompanyDocuments(params.company_id, {
+        page: params.page,
+        limit: params.limit,
+        status: params.status
+      })
       setData(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : '獲取文檔列表失敗')
@@ -106,7 +110,14 @@ export function useDocumentUpload() {
         })
       }, 500)
 
-      const response = await documents.upload(request)
+      const formData = new FormData()
+      formData.append('file', request.file)
+      formData.append('company_id', request.company_id.toString())
+      if (request.category) formData.append('category', request.category)
+      if (request.description) formData.append('description', request.description)
+      if (request.tags) formData.append('tags', JSON.stringify(request.tags))
+      
+      const response = await documentsApi.upload(formData)
 
       clearInterval(progressInterval)
 
@@ -121,7 +132,7 @@ export function useDocumentUpload() {
       // 輪詢處理狀態
       const pollStatus = async () => {
         try {
-          const status = await documents.getStatus(response.task_id)
+          const status = await documentsApi.getStatus(response.task_id)
           
           setUploads(prev => {
             const current = prev.get(fileId)
@@ -261,7 +272,7 @@ export function useDocumentStatus(documentId: string | null) {
     setError(null)
 
     try {
-      const response = await documents.getStatus(documentId)
+      const response = await documentsApi.getStatus(documentId)
       setStatus(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : '獲取狀態失敗')
@@ -294,7 +305,8 @@ export function useBatchOperations() {
     setError(null)
 
     try {
-      const response = await documents.batch(request)
+      // 批次操作暫時不可用
+      throw new Error('批次操作功能暫未實作')
       return response
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '批次操作失敗'
@@ -325,7 +337,7 @@ export function useDocumentStats(companyId: number) {
     setError(null)
 
     try {
-      const response = await documents.stats(companyId)
+      const response = await documentsApi.getStats(companyId)
       setStats(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : '獲取統計資訊失敗')

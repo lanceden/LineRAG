@@ -16,7 +16,6 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     """Token 響應"""
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
 
 
@@ -31,7 +30,6 @@ class UserInfo(BaseModel):
     username: str
     email: str
     full_name: str
-    role: str
     is_active: bool
     last_login: Optional[datetime]
     created_at: datetime

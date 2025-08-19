@@ -1,21 +1,25 @@
-'use client'
+"use client"
 
-import React, { useState, useCallback } from 'react'
-import { 
-  Users, 
-  UserPlus, 
-  Mail, 
-  MoreVertical, 
-  Edit, 
-  Trash2, 
+import React, { useState, useCallback } from "react"
+import {
+  Users,
+  UserPlus,
+  Mail,
+  MoreVertical,
+  Edit,
+  Trash2,
   Shield,
   Clock,
   CheckCircle,
   XCircle,
-  Send
-} from 'lucide-react'
-import { cn } from '@/lib/utils'
-import type { CompanyUser, InviteUserRequest, CompanyInvitation } from '@/types/company'
+  Send,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
+import type {
+  CompanyUser,
+  InviteUserRequest,
+  CompanyInvitation,
+} from "@/types/company"
 
 interface CompanyUserManagementProps {
   users: CompanyUser[]
@@ -42,58 +46,65 @@ export function CompanyUserManagement({
 }: CompanyUserManagementProps) {
   const [showInviteForm, setShowInviteForm] = useState(false)
   const [inviteData, setInviteData] = useState<InviteUserRequest>({
-    email: '',
-    name: '',
-    role: 'cs_agent',
+    email: "",
+    name: "",
+    role: "cs_agent",
   })
   const [inviteLoading, setInviteLoading] = useState(false)
 
   // 角色選項
   const roleOptions = [
-    { value: 'company_admin', label: '公司管理員', description: '完整的公司管理權限' },
-    { value: 'cs_manager', label: '客服主管', description: '客服團隊管理權限' },
-    { value: 'cs_agent', label: '客服專員', description: '基本客服操作權限' },
+    {
+      value: "company_admin",
+      label: "公司管理員",
+      description: "完整的公司管理權限",
+    },
+    { value: "cs_manager", label: "客服主管", description: "客服團隊管理權限" },
+    { value: "cs_agent", label: "客服專員", description: "基本客服操作權限" },
   ]
 
   // 處理邀請用戶
-  const handleInviteUser = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!inviteData.email || !inviteData.name) {
-      return
-    }
+  const handleInviteUser = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault()
 
-    setInviteLoading(true)
-    try {
-      await onInviteUser(inviteData)
-      setInviteData({ email: '', name: '', role: 'cs_agent' })
-      setShowInviteForm(false)
-    } catch (error) {
-      // 錯誤處理由父組件負責
-    } finally {
-      setInviteLoading(false)
-    }
-  }, [inviteData, onInviteUser])
+      if (!inviteData.email || !inviteData.name) {
+        return
+      }
+
+      setInviteLoading(true)
+      try {
+        await onInviteUser(inviteData)
+        setInviteData({ email: "", name: "", role: "cs_agent" })
+        setShowInviteForm(false)
+      } catch (error) {
+        // 錯誤處理由父組件負責
+      } finally {
+        setInviteLoading(false)
+      }
+    },
+    [inviteData, onInviteUser]
+  )
 
   // 格式化日期
   const formatDate = useCallback((dateString: string) => {
-    return new Date(dateString).toLocaleString('zh-TW', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
+    return new Date(dateString).toLocaleString("zh-TW", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
     })
   }, [])
 
   // 獲取角色標籤
   const getRoleLabel = useCallback((role: string) => {
-    const option = roleOptions.find(opt => opt.value === role)
+    const option = roleOptions.find((opt) => opt.value === role)
     return option?.label || role
   }, [])
 
   return (
-    <div className={cn('space-y-6', className)}>
+    <div className={cn("space-y-6", className)}>
       {/* 標題和邀請按鈕 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center">
@@ -105,8 +116,7 @@ export function CompanyUserManagement({
         </div>
         <button
           onClick={() => setShowInviteForm(true)}
-          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
+          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
           <UserPlus className="h-4 w-4 mr-2" />
           邀請用戶
         </button>
@@ -125,7 +135,9 @@ export function CompanyUserManagement({
                 <input
                   type="text"
                   value={inviteData.name}
-                  onChange={(e) => setInviteData(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) =>
+                    setInviteData((prev) => ({ ...prev, name: e.target.value }))
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="請輸入用戶姓名"
                   required
@@ -138,7 +150,12 @@ export function CompanyUserManagement({
                 <input
                   type="email"
                   value={inviteData.email}
-                  onChange={(e) => setInviteData(prev => ({ ...prev, email: e.target.value }))}
+                  onChange={(e) =>
+                    setInviteData((prev) => ({
+                      ...prev,
+                      email: e.target.value,
+                    }))
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="user@example.com"
                   required
@@ -151,10 +168,17 @@ export function CompanyUserManagement({
               </label>
               <select
                 value={inviteData.role}
-                onChange={(e) => setInviteData(prev => ({ ...prev, role: e.target.value as any }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                {roleOptions.map(option => (
+                onChange={(e) =>
+                  setInviteData((prev) => ({
+                    ...prev,
+                    role: e.target.value as
+                      | "company_admin"
+                      | "cs_manager"
+                      | "cs_agent",
+                  }))
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                {roleOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label} - {option.description}
                   </option>
@@ -165,16 +189,14 @@ export function CompanyUserManagement({
               <button
                 type="button"
                 onClick={() => setShowInviteForm(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
                 取消
               </button>
               <button
                 type="submit"
                 disabled={inviteLoading}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50"
-              >
-                {inviteLoading ? '發送中...' : '發送邀請'}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50">
+                {inviteLoading ? "發送中..." : "發送邀請"}
               </button>
             </div>
           </form>
@@ -189,17 +211,21 @@ export function CompanyUserManagement({
           </div>
           <div className="divide-y divide-gray-200">
             {invitations.map((invitation) => (
-              <div key={invitation.id} className="px-6 py-4 flex items-center justify-between">
+              <div
+                key={invitation.id}
+                className="px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
                     <Mail className="h-4 w-4 text-yellow-600" />
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900">{invitation.name}</p>
+                    <p className="font-medium text-gray-900">
+                      {invitation.name}
+                    </p>
                     <p className="text-sm text-gray-500">{invitation.email}</p>
                     <p className="text-xs text-gray-400">
-                      邀請於 {formatDate(invitation.invited_at)} • 
-                      到期時間 {formatDate(invitation.expires_at)}
+                      邀請於 {formatDate(invitation.invited_at)} • 到期時間{" "}
+                      {formatDate(invitation.expires_at)}
                     </p>
                   </div>
                 </div>
@@ -213,8 +239,7 @@ export function CompanyUserManagement({
                       <button
                         onClick={() => onResendInvitation(invitation.id)}
                         className="p-1 text-blue-600 hover:text-blue-500"
-                        title="重新發送邀請"
-                      >
+                        title="重新發送邀請">
                         <Send className="h-4 w-4" />
                       </button>
                     )}
@@ -222,8 +247,7 @@ export function CompanyUserManagement({
                       <button
                         onClick={() => onCancelInvitation(invitation.id)}
                         className="p-1 text-red-600 hover:text-red-500"
-                        title="取消邀請"
-                      >
+                        title="取消邀請">
                         <XCircle className="h-4 w-4" />
                       </button>
                     )}
@@ -244,7 +268,9 @@ export function CompanyUserManagement({
           <div className="px-6 py-12 text-center">
             <Users className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">尚無用戶</h3>
-            <p className="mt-1 text-sm text-gray-500">開始邀請用戶加入您的公司</p>
+            <p className="mt-1 text-sm text-gray-500">
+              開始邀請用戶加入您的公司
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
@@ -276,17 +302,25 @@ interface UserItemProps {
   getRoleLabel: (role: string) => string
 }
 
-function UserItem({ user, roleOptions, onUpdateRole, onRemove, formatDate, getRoleLabel }: UserItemProps) {
+function UserItem({
+  user,
+  roleOptions,
+  onUpdateRole,
+  onRemove,
+  formatDate,
+  getRoleLabel,
+}: UserItemProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [showRoleEdit, setShowRoleEdit] = useState(false)
 
   return (
     <div className="px-6 py-4 flex items-center justify-between">
       <div className="flex items-center space-x-3">
-        <div className={cn(
-          'w-10 h-10 rounded-full flex items-center justify-center text-white font-medium',
-          user.is_active ? 'bg-green-500' : 'bg-gray-400'
-        )}>
+        <div
+          className={cn(
+            "w-10 h-10 rounded-full flex items-center justify-center text-white font-medium",
+            user.is_active ? "bg-green-500" : "bg-gray-400"
+          )}>
           {user.name.charAt(0).toUpperCase()}
         </div>
         <div>
@@ -307,7 +341,7 @@ function UserItem({ user, roleOptions, onUpdateRole, onRemove, formatDate, getRo
           </div>
         </div>
       </div>
-      
+
       <div className="flex items-center space-x-3">
         {/* 角色標籤 */}
         <div className="flex items-center space-x-2">
@@ -321,9 +355,8 @@ function UserItem({ user, roleOptions, onUpdateRole, onRemove, formatDate, getRo
               }}
               onBlur={() => setShowRoleEdit(false)}
               className="text-sm border border-gray-300 rounded px-2 py-1"
-              autoFocus
-            >
-              {roleOptions.map(option => (
+              autoFocus>
+              {roleOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -332,8 +365,7 @@ function UserItem({ user, roleOptions, onUpdateRole, onRemove, formatDate, getRo
           ) : (
             <button
               onClick={() => setShowRoleEdit(true)}
-              className="text-sm text-blue-600 hover:text-blue-500"
-            >
+              className="text-sm text-blue-600 hover:text-blue-500">
               {getRoleLabel(user.role)}
             </button>
           )}
@@ -343,15 +375,14 @@ function UserItem({ user, roleOptions, onUpdateRole, onRemove, formatDate, getRo
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="p-1 text-gray-400 hover:text-gray-600"
-          >
+            className="p-1 text-gray-400 hover:text-gray-600">
             <MoreVertical className="h-4 w-4" />
           </button>
-          
+
           {showMenu && (
             <>
-              <div 
-                className="fixed inset-0 z-10" 
+              <div
+                className="fixed inset-0 z-10"
                 onClick={() => setShowMenu(false)}
               />
               <div className="absolute right-0 mt-1 w-32 bg-white border rounded-lg shadow-lg z-20">
@@ -360,8 +391,7 @@ function UserItem({ user, roleOptions, onUpdateRole, onRemove, formatDate, getRo
                     setShowRoleEdit(true)
                     setShowMenu(false)
                   }}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center"
-                >
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center">
                   <Edit className="h-3 w-3 mr-2" />
                   編輯角色
                 </button>
@@ -372,8 +402,7 @@ function UserItem({ user, roleOptions, onUpdateRole, onRemove, formatDate, getRo
                     }
                     setShowMenu(false)
                   }}
-                  className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-gray-50 flex items-center"
-                >
+                  className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-gray-50 flex items-center">
                   <Trash2 className="h-3 w-3 mr-2" />
                   移除用戶
                 </button>

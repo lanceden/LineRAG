@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import * as Dialog from "@radix-ui/react-dialog"
 import { X, AlertCircle, Upload, Plus } from "lucide-react"
-import { User, CreateUserRequest, UpdateUserRequest } from "@/lib/api/users"
+import { User, CreateUserRequest, UpdateUserRequest } from "@/types/user"
 
 interface UserDialogProps {
   isOpen: boolean
@@ -25,7 +25,6 @@ export function UserDialog({
     email: "",
     password: "",
     full_name: "",
-    role: "admin",
     is_active: true,
   })
 
@@ -39,7 +38,6 @@ export function UserDialog({
         email: user.email,
         password: "", // 編輯時不顯示密碼
         full_name: user.full_name,
-        role: user.role,
         is_active: user.is_active,
       })
     } else {
@@ -48,7 +46,6 @@ export function UserDialog({
         email: "",
         password: "",
         full_name: "",
-        role: "admin",
         is_active: true,
       })
     }
@@ -92,7 +89,6 @@ export function UserDialog({
           username: formData.username,
           email: formData.email,
           full_name: formData.full_name,
-          role: formData.role,
           is_active: formData.is_active,
         }
 
@@ -120,7 +116,6 @@ export function UserDialog({
           email: formData.email,
           password: formData.password,
           full_name: formData.full_name,
-          role: formData.role,
         }
         await onSubmit(createData)
       }
@@ -261,24 +256,6 @@ export function UserDialog({
               )}
             </div>
 
-            {/* 角色 */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                角色
-              </label>
-              <select
-                value={formData.role}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, role: e.target.value }))
-                }
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-gray-400 bg-white">
-                <option value="admin">管理員</option>
-                <option value="super_admin">超級管理員</option>
-                <option value="company_admin">公司管理員</option>
-                <option value="cs_manager">客服經理</option>
-                <option value="cs_agent">客服人員</option>
-              </select>
-            </div>
 
             {/* 狀態 (僅編輯時顯示) */}
             {user && (

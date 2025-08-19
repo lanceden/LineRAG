@@ -1,25 +1,26 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 import json
 from typing import Optional
 
 from app.schemas.ask import AskRequest, MultimodalAskRequest
 from app.services.rag_anything import get_rag_service
+from app.services.multitenant_rag import get_multitenant_rag_service
+from app.core.database import get_db
 
 # 定義 API 路由，前綴為空，標籤為 "ask"
 router = APIRouter(prefix="", tags=["ask"])
 
 
 @router.post("/ask")
-async def ask(input: AskRequest):
+async def ask(input: AskRequest, db: Session = Depends(get_db)):
     """
     處理來自用戶的純文本提問請求。
-    使用 RAG-Anything 進行文本查詢。
+    使用多租戶 RAG 進行文本查詢。
     """
-    rag_service = get_rag_service()
-
-    if not rag_service.initialized:
-        raise HTTPException(status_code=503, detail="RAG service not initialized")
+    # 獲取 company_id
+    company_id = input.company_id
 
     def generate():
         try:
@@ -33,10 +34,17 @@ async def ask(input: AskRequest):
             if not user_query:
                 raise ValueError("No user query found in messages")
 
-            # 使用 RAG-Anything 進行查詢
+            # 使用多租戶 RAG 服務進行查詢
             import asyncio
 
-            answer = asyncio.run(rag_service.query_text(user_query, mode="hybrid"))
+            async def query_with_company():
+                multitenant_rag = get_multitenant_rag_service()
+                rag_service = await multitenant_rag.get_company_rag_service(
+                    company_id, db
+                )
+                return await rag_service.query_text(user_query, mode="hybrid")
+
+            answer = asyncio.run(query_with_company())
 
             # 發送答案內容
             yield f"data: {json.dumps({'type': 'text', 'text': answer})}\n\n"

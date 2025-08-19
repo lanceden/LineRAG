@@ -3,7 +3,7 @@
  */
 
 // 文檔處理狀態
-export type DocumentStatus = 
+export type DocumentStatus =
   | 'queued'      // 排隊中
   | 'processing'  // 處理中
   | 'completed'   // 完成
@@ -11,7 +11,7 @@ export type DocumentStatus =
   | 'cancelled'   // 取消
 
 // 支援的檔案類型
-export type SupportedFileType = 
+export type SupportedFileType =
   | '.pdf'
   | '.docx'
   | '.pptx'
@@ -38,7 +38,7 @@ export interface DocumentMetadata {
   category?: string
   description?: string
   tags?: string[]
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   processing_progress?: number
   error_message?: string
 }
@@ -71,7 +71,7 @@ export interface DocumentStatusResponse {
 }
 
 // 文檔列表查詢參數
-export interface DocumentListParams {
+export interface DocumentListParams extends Record<string, unknown> {
   company_id: number
   page?: number
   limit?: number
@@ -99,7 +99,7 @@ export type BatchAction = 'delete' | 'reprocess' | 'export' | 'update_category'
 export interface BatchOperationRequest {
   document_ids: string[]
   action: BatchAction
-  params?: Record<string, any>
+  params?: Record<string, unknown>
 }
 
 // 批次操作回應
@@ -221,7 +221,7 @@ export interface DocumentActivity {
   document_id: string
   user_id: number
   action: 'upload' | 'update' | 'delete' | 'download' | 'view' | 'share'
-  details?: Record<string, any>
+  details?: Record<string, unknown>
   ip_address?: string
   user_agent?: string
   created_at: string

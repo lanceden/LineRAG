@@ -22,35 +22,22 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/multitenantrag/auth/login', request.url))
   }
 
-  // 檢查系統管理員權限 - 只限制特定管理功能，允許儀表板訪問
-  const restrictedAdminPaths = [
-    '/multitenantrag/admin/users',
-    '/multitenantrag/admin/companies',
-    '/multitenantrag/admin/system'
-  ]
-  
-  const isRestrictedPath = restrictedAdminPaths.some(path => pathname.startsWith(path))
-  if (isRestrictedPath && session.user.role !== 'super_admin') {
-    return NextResponse.redirect(new URL('/multitenantrag/admin', request.url))
-  }
+  // 移除role檢查 - 改為由後端中間件處理權限
+  // 所有已認證用戶都可以訪問管理功能，權限檢查在API層進行
 
   // 檢查公司存取權限
   const companyMatch = pathname.match(/\/company\/([^\/]+)/)
   if (companyMatch) {
     const companyId = companyMatch[1]
-    const userRole = session.user.role
     const userCompanies = session.user.companies || []
 
-    // super_admin 可以存取所有公司
-    if (userRole !== 'super_admin') {
-      // 檢查用戶是否有該公司的權限
-      const hasAccess = userCompanies.some(company => 
-        company.id === companyId && company.is_active
-      )
-      
-      if (!hasAccess) {
-        return NextResponse.redirect(new URL('/dashboard', request.url))
-      }
+    // 檢查用戶是否有該公司的權限
+    const hasAccess = userCompanies.some(company => 
+      company.id === companyId && company.is_active
+    )
+    
+    if (!hasAccess) {
+      return NextResponse.redirect(new URL('/multitenantrag/admin', request.url))
     }
   }
 
