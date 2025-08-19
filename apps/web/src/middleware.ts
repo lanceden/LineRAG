@@ -22,9 +22,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/multitenantrag/auth/login', request.url))
   }
 
-  // 移除role檢查 - 改為由後端中間件處理權限
-  // 所有已認證用戶都可以訪問管理功能，權限檢查在API層進行
-
   // 檢查公司存取權限
   const companyMatch = pathname.match(/\/company\/([^\/]+)/)
   if (companyMatch) {
@@ -32,10 +29,10 @@ export async function middleware(request: NextRequest) {
     const userCompanies = session.user.companies || []
 
     // 檢查用戶是否有該公司的權限
-    const hasAccess = userCompanies.some(company => 
+    const hasAccess = userCompanies.some(company =>
       company.id === companyId && company.is_active
     )
-    
+
     if (!hasAccess) {
       return NextResponse.redirect(new URL('/multitenantrag/admin', request.url))
     }
