@@ -157,7 +157,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "3001:3000"
+      - "3008:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=linerag123
