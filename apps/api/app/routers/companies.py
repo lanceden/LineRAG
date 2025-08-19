@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.middleware import get_current_user
+from app.core.exceptions import ValidationError
 from app.models.system_user import SystemUser
 from app.schemas.company import (
     Company as CompanySchema,
@@ -59,8 +60,6 @@ async def get_company(
 ):
     """獲取單一公司資訊 - 需要 company.view 權限"""
     company = CompanyService.get_company(db, company_id)
-    if not company:
-        raise HTTPException(status_code=404, detail="公司不存在")
     return company
 
 
@@ -74,7 +73,7 @@ async def create_company(
     try:
         company = CompanyService.create_company(db, company_data)
         return company
-    except ValueError as e:
+    except (ValueError, ValidationError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -155,9 +154,7 @@ async def batch_operations(
 ):
     """批次操作公司 - 需要 company.edit 權限"""
     try:
-        result = CompanyService.batch_operations(
-            db, request.company_ids, request.operation
-        )
+        result = CompanyService.batch_operation(db, request)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

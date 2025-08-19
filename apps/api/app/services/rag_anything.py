@@ -124,7 +124,9 @@ class RAGAnythingService:
             company_workspace = f"company_{working_dir.split('/')[-1]}"
 
             # 設定 Qdrant 環境變數
-            os.environ["QDRANT_URL"] = f"http://{os.getenv('QDRANT_HOST', 'localhost')}:{os.getenv('QDRANT_PORT', '6333')}"
+            os.environ["QDRANT_URL"] = (
+                f"http://{os.getenv('QDRANT_HOST', 'localhost')}:{os.getenv('QDRANT_PORT', '6333')}"
+            )
             os.environ["QDRANT_WORKSPACE"] = company_workspace
 
             # 設定 Neo4j 環境變數
@@ -144,25 +146,47 @@ class RAGAnythingService:
             )
 
             # 初始化 LightRAG 存儲
-            await lightrag_instance.initialize_storages()
+            print("🔄 Initializing LightRAG storages...")
+            try:
+                await lightrag_instance.initialize_storages()
+                print("✅ LightRAG storages initialized successfully")
+            except Exception as storage_error:
+                print(f"❌ Failed to initialize LightRAG storages: {storage_error}")
+                raise
 
             # 初始化 RAG-Anything 使用自定義的 LightRAG 實例
-            self.rag_instance = RAGAnything(
-                lightrag=lightrag_instance,  # 傳入配置好的 LightRAG 實例
-                vision_model_func=vision_model_func,
-            )
+            print("🔄 Creating RAG-Anything instance...")
+            try:
+                self.rag_instance = RAGAnything(
+                    lightrag=lightrag_instance,  # 傳入配置好的 LightRAG 實例
+                    vision_model_func=vision_model_func,
+                )
+                print("✅ RAG-Anything instance created successfully")
+            except Exception as rag_error:
+                print(f"❌ Failed to create RAG-Anything instance: {rag_error}")
+                raise
 
             # 初始化 LightRAG 存儲 (確保外部資料庫連接)
-            if hasattr(self.rag_instance, 'lightrag') and self.rag_instance.lightrag:
-                await self.rag_instance.lightrag.initialize_storages()
-                print("✅ LightRAG storages initialized with external databases")
+            if hasattr(self.rag_instance, "lightrag") and self.rag_instance.lightrag:
+                try:
+                    await self.rag_instance.lightrag.initialize_storages()
+                    print("✅ LightRAG storages initialized with external databases")
+                except Exception as final_storage_error:
+                    print(
+                        f"❌ Failed final storage initialization: {final_storage_error}"
+                    )
+                    raise
 
             # 記錄配置資訊
             print(f"✅ RAG-Anything initialized with external databases:")
             print(f"📁 Working dir: {working_dir}")
             print(f"🏢 Company workspace: {company_workspace}")
-            print(f"� Vector storage: QdrantVectorDBStorage ({os.getenv('QDRANT_HOST', 'localhost')}:{os.getenv('QDRANT_PORT', '6333')})")
-            print(f"🔗 Graph storage: Neo4JStorage ({os.getenv('NEO4J_URI', 'bolt://localhost:7687')})")
+            print(
+                f"� Vector storage: QdrantVectorDBStorage ({os.getenv('QDRANT_HOST', 'localhost')}:{os.getenv('QDRANT_PORT', '6333')})"
+            )
+            print(
+                f"🔗 Graph storage: Neo4JStorage ({os.getenv('NEO4J_URI', 'bolt://localhost:7687')})"
+            )
             print(f"🔒 Multi-tenant isolation: Enabled")
 
             # 初始化 Neo4j 服務
@@ -170,13 +194,24 @@ class RAGAnythingService:
             await self.neo4j_service.initialize()
 
             self.initialized = True
-            print("✅ RAG-Anything service with LightRAG + Neo4j + Qdrant initialized successfully")
+            print(
+                "✅ RAG-Anything service with LightRAG + Neo4j + Qdrant initialized successfully"
+            )
 
         except Exception as e:
             print(f"❌ Failed to initialize RAG-Anything service: {e}")
             raise
 
-    async def _robust_openai_call(self, model, prompt, system_prompt=None, history_messages=[], api_key=None, base_url=None, **kwargs):
+    async def _robust_openai_call(
+        self,
+        model,
+        prompt,
+        system_prompt=None,
+        history_messages=[],
+        api_key=None,
+        base_url=None,
+        **kwargs,
+    ):
         """完整的 OpenAI API 調用（包含錯誤處理和重試）"""
         max_retries = 3
         retry_count = 0
@@ -205,17 +240,22 @@ class RAGAnythingService:
 
                 # 檢查是否為可重試的錯誤
                 if self._is_retryable_error(error_msg) and retry_count < max_retries:
-                    wait_time = 2 ** retry_count  # 指數退避
-                    print(f"OpenAI API call failed (attempt {retry_count}/{max_retries}): {error_msg}")
+                    wait_time = 2**retry_count  # 指數退避
+                    print(
+                        f"OpenAI API call failed (attempt {retry_count}/{max_retries}): {error_msg}"
+                    )
                     print(f"Retrying in {wait_time} seconds...")
 
                     import asyncio
+
                     await asyncio.sleep(wait_time)
                     continue
                 else:
                     # 不可重試的錯誤或達到最大重試次數
                     print(f"OpenAI API call failed permanently: {error_msg}")
-                    raise Exception(f"OpenAI API failed after {max_retries} attempts: {error_msg}")
+                    raise Exception(
+                        f"OpenAI API failed after {max_retries} attempts: {error_msg}"
+                    )
 
     def _is_retryable_error(self, error_msg: str) -> bool:
         """判斷是否為可重試的錯誤"""
@@ -227,7 +267,7 @@ class RAGAnythingService:
             "503",
             "502",
             "500",
-            "429"
+            "429",
         ]
 
         error_lower = error_msg.lower()
@@ -237,14 +277,20 @@ class RAGAnythingService:
         """取得 API 使用統計"""
         success_rate = 0
         if self.api_call_count > 0:
-            success_rate = ((self.api_call_count - self.api_error_count) / self.api_call_count) * 100
+            success_rate = (
+                (self.api_call_count - self.api_error_count) / self.api_call_count
+            ) * 100
 
         return {
             "total_calls": self.api_call_count,
             "error_count": self.api_error_count,
             "success_count": self.api_call_count - self.api_error_count,
             "success_rate_percent": round(success_rate, 2),
-            "service_health": "healthy" if success_rate > 95 else "degraded" if success_rate > 80 else "unhealthy"
+            "service_health": (
+                "healthy"
+                if success_rate > 95
+                else "degraded" if success_rate > 80 else "unhealthy"
+            ),
         }
 
     async def process_document(
@@ -278,7 +324,7 @@ class RAGAnythingService:
                     output_dir=str(company_output_dir),
                     parse_method="auto",
                     device="auto",  # 自動選擇 GPU/CPU
-                    backend="pipeline"
+                    backend="pipeline",
                 )
 
                 return {
@@ -295,9 +341,12 @@ class RAGAnythingService:
                 error_msg = str(e)
 
                 if retry_count < max_retries:
-                    print(f"Document processing failed (attempt {retry_count}/{max_retries}): {error_msg}")
+                    print(
+                        f"Document processing failed (attempt {retry_count}/{max_retries}): {error_msg}"
+                    )
                     import asyncio
-                    await asyncio.sleep(2 ** retry_count)  # 指數退避
+
+                    await asyncio.sleep(2**retry_count)  # 指數退避
                     continue
                 else:
                     return {
@@ -406,11 +455,15 @@ class RAGAnythingService:
             "initialized": self.initialized,
             "rag_instance": self.rag_instance is not None,
             "neo4j_service": self.neo4j_service is not None,
-            "lightrag_instance": hasattr(self.rag_instance, 'lightrag') if self.rag_instance else False,
+            "lightrag_instance": (
+                hasattr(self.rag_instance, "lightrag") if self.rag_instance else False
+            ),
             "service": "RAG-Anything with LightRAG + Neo4j + Qdrant",
         }
 
-    async def get_entity_details(self, company_id: int, entity_id: str) -> Dict[str, Any]:
+    async def get_entity_details(
+        self, company_id: int, entity_id: str
+    ) -> Dict[str, Any]:
         """取得實體詳細資訊"""
         if not self.initialized:
             await self.initialize()
@@ -418,40 +471,35 @@ class RAGAnythingService:
         try:
             # 從 Neo4j 取得實體詳細資訊
             entities = await self.neo4j_service.search_entities(
-                company_id=company_id,
-                search_term=entity_id,
-                limit=1
+                company_id=company_id, search_term=entity_id, limit=1
             )
 
             if not entities:
-                return {
-                    "status": "error",
-                    "message": "Entity not found"
-                }
+                return {"status": "error", "message": "Entity not found"}
 
             entity = entities[0]
 
             # 取得相關實體
             related_entities = await self.neo4j_service.query_related_entities(
-                company_id=company_id,
-                entity_id=entity_id,
-                max_depth=2
+                company_id=company_id, entity_id=entity_id, max_depth=2
             )
 
             return {
                 "status": "success",
                 "entity": entity,
                 "related_entities": related_entities,
-                "relationship_count": len(related_entities)
+                "relationship_count": len(related_entities),
             }
 
         except Exception as e:
             return {
                 "status": "error",
-                "message": f"Failed to get entity details: {str(e)}"
+                "message": f"Failed to get entity details: {str(e)}",
             }
 
-    async def search_entities_by_type(self, company_id: int, entity_type: str, limit: int = 20) -> Dict[str, Any]:
+    async def search_entities_by_type(
+        self, company_id: int, entity_type: str, limit: int = 20
+    ) -> Dict[str, Any]:
         """按類型搜尋實體"""
         if not self.initialized:
             await self.initialize()
@@ -461,23 +509,25 @@ class RAGAnythingService:
                 company_id=company_id,
                 search_term="",
                 entity_type=entity_type,
-                limit=limit
+                limit=limit,
             )
 
             return {
                 "status": "success",
                 "entity_type": entity_type,
                 "entities": entities,
-                "count": len(entities)
+                "count": len(entities),
             }
 
         except Exception as e:
             return {
                 "status": "error",
-                "message": f"Failed to search entities by type: {str(e)}"
+                "message": f"Failed to search entities by type: {str(e)}",
             }
 
-    async def get_knowledge_graph_visualization(self, company_id: int, center_entity_id: str = None, max_nodes: int = 50) -> Dict[str, Any]:
+    async def get_knowledge_graph_visualization(
+        self, company_id: int, center_entity_id: str = None, max_nodes: int = 50
+    ) -> Dict[str, Any]:
         """取得知識圖譜視覺化資料"""
         if not self.initialized:
             await self.initialize()
@@ -486,37 +536,33 @@ class RAGAnythingService:
             if center_entity_id:
                 # 以特定實體為中心的圖譜
                 related_entities = await self.neo4j_service.query_related_entities(
-                    company_id=company_id,
-                    entity_id=center_entity_id,
-                    max_depth=2
+                    company_id=company_id, entity_id=center_entity_id, max_depth=2
                 )
 
                 # 取得中心實體
                 center_entities = await self.neo4j_service.search_entities(
-                    company_id=company_id,
-                    search_term=center_entity_id,
-                    limit=1
+                    company_id=company_id, search_term=center_entity_id, limit=1
                 )
 
                 all_entities = center_entities + related_entities
             else:
                 # 取得所有實體的子集
                 all_entities = await self.neo4j_service.search_entities(
-                    company_id=company_id,
-                    search_term="",
-                    limit=max_nodes
+                    company_id=company_id, search_term="", limit=max_nodes
                 )
 
             # 轉換為視覺化格式
             nodes = []
             for entity in all_entities[:max_nodes]:
-                nodes.append({
-                    "id": entity["id"],
-                    "label": entity["name"],
-                    "type": entity["type"],
-                    "description": entity.get("description", ""),
-                    "properties": entity.get("properties", {})
-                })
+                nodes.append(
+                    {
+                        "id": entity["id"],
+                        "label": entity["name"],
+                        "type": entity["type"],
+                        "description": entity.get("description", ""),
+                        "properties": entity.get("properties", {}),
+                    }
+                )
 
             # 這裡可以進一步查詢實體間的關係來生成 edges
             # 為簡化，暫時返回節點資料
@@ -526,13 +572,13 @@ class RAGAnythingService:
                 "nodes": nodes,
                 "edges": [],  # TODO: 實作邊的查詢
                 "center_entity": center_entity_id,
-                "total_nodes": len(nodes)
+                "total_nodes": len(nodes),
             }
 
         except Exception as e:
             return {
                 "status": "error",
-                "message": f"Failed to get visualization data: {str(e)}"
+                "message": f"Failed to get visualization data: {str(e)}",
             }
 
     async def create_knowledge_graph_from_document(
@@ -614,8 +660,8 @@ class RAGAnythingService:
         try:
             # 讀取文檔內容
             content = ""
-            if file_path.endswith('.txt'):
-                with open(file_path, 'r', encoding='utf-8') as f:
+            if file_path.endswith(".txt"):
+                with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
             else:
                 # 對於其他格式，使用 RAG-Anything 已處理的內容
@@ -638,10 +684,10 @@ class RAGAnythingService:
 """
 
             # 調用 LLM 進行實體提取
-            if hasattr(self.rag_instance, 'lightrag') and self.rag_instance.lightrag:
+            if hasattr(self.rag_instance, "lightrag") and self.rag_instance.lightrag:
                 llm_response = await self.rag_instance.lightrag.llm_model_func(
                     entity_extraction_prompt,
-                    system_prompt="你是一個專業的實體提取助手，請準確識別文檔中的重要實體。"
+                    system_prompt="你是一個專業的實體提取助手，請準確識別文檔中的重要實體。",
                 )
 
                 # 解析 LLM 回應
@@ -649,7 +695,7 @@ class RAGAnythingService:
                 import re
 
                 # 嘗試提取 JSON 部分
-                json_match = re.search(r'\[.*\]', llm_response, re.DOTALL)
+                json_match = re.search(r"\[.*\]", llm_response, re.DOTALL)
                 if json_match:
                     try:
                         extracted_entities = json.loads(json_match.group())
@@ -658,32 +704,38 @@ class RAGAnythingService:
                         entities = []
                         filename = Path(file_path).stem
 
-                        for i, entity in enumerate(extracted_entities[:10]):  # 限制最多10個實體
+                        for i, entity in enumerate(
+                            extracted_entities[:10]
+                        ):  # 限制最多10個實體
                             entity_id = f"{company_id}_{filename}_entity_{i+1}"
-                            entities.append({
-                                "id": entity_id,
-                                "name": entity.get("name", f"Entity_{i+1}"),
-                                "type": entity.get("type", "Unknown"),
-                                "description": entity.get("description", ""),
-                                "properties": {
-                                    "source_file": file_path,
-                                    "extraction_method": "llm",
-                                    "confidence": 0.8
+                            entities.append(
+                                {
+                                    "id": entity_id,
+                                    "name": entity.get("name", f"Entity_{i+1}"),
+                                    "type": entity.get("type", "Unknown"),
+                                    "description": entity.get("description", ""),
+                                    "properties": {
+                                        "source_file": file_path,
+                                        "extraction_method": "llm",
+                                        "confidence": 0.8,
+                                    },
                                 }
-                            })
+                            )
 
                         # 添加文檔本身作為實體
-                        entities.append({
-                            "id": f"{company_id}_{filename}_document",
-                            "name": filename,
-                            "type": "Document",
-                            "description": f"Document entity for {filename}",
-                            "properties": {
-                                "source_file": file_path,
-                                "extraction_method": "automatic",
-                                "confidence": 1.0
+                        entities.append(
+                            {
+                                "id": f"{company_id}_{filename}_document",
+                                "name": filename,
+                                "type": "Document",
+                                "description": f"Document entity for {filename}",
+                                "properties": {
+                                    "source_file": file_path,
+                                    "extraction_method": "automatic",
+                                    "confidence": 1.0,
+                                },
                             }
-                        })
+                        )
 
                         return entities
 
@@ -701,8 +753,8 @@ class RAGAnythingService:
                     "properties": {
                         "source_file": file_path,
                         "extraction_method": "fallback",
-                        "confidence": 0.5
-                    }
+                        "confidence": 0.5,
+                    },
                 }
             ]
 
@@ -719,8 +771,8 @@ class RAGAnythingService:
                     "properties": {
                         "source_file": file_path,
                         "extraction_method": "error_fallback",
-                        "confidence": 0.3
-                    }
+                        "confidence": 0.3,
+                    },
                 }
             ]
 
@@ -735,11 +787,13 @@ class RAGAnythingService:
             relationships = []
 
             # 使用 LLM 進行關係提取
-            if hasattr(self.rag_instance, 'lightrag') and self.rag_instance.lightrag:
+            if hasattr(self.rag_instance, "lightrag") and self.rag_instance.lightrag:
                 # 準備實體列表
                 entity_list = []
                 for entity in entities:
-                    entity_list.append(f"- {entity['name']} ({entity['type']}): {entity['description']}")
+                    entity_list.append(
+                        f"- {entity['name']} ({entity['type']}): {entity['description']}"
+                    )
 
                 entity_text = "\n".join(entity_list)
 
@@ -766,7 +820,7 @@ class RAGAnythingService:
                 try:
                     llm_response = await self.rag_instance.lightrag.llm_model_func(
                         relationship_extraction_prompt,
-                        system_prompt="你是一個專業的關係提取助手，請準確識別實體之間的語義關係。"
+                        system_prompt="你是一個專業的關係提取助手，請準確識別實體之間的語義關係。",
                     )
 
                     # 解析 LLM 回應
@@ -774,16 +828,20 @@ class RAGAnythingService:
                     import re
 
                     # 嘗試提取 JSON 部分
-                    json_match = re.search(r'\[.*\]', llm_response, re.DOTALL)
+                    json_match = re.search(r"\[.*\]", llm_response, re.DOTALL)
                     if json_match:
                         try:
                             extracted_relationships = json.loads(json_match.group())
 
                             # 建立實體名稱到 ID 的映射
-                            entity_name_to_id = {entity['name']: entity['id'] for entity in entities}
+                            entity_name_to_id = {
+                                entity["name"]: entity["id"] for entity in entities
+                            }
 
                             # 轉換為標準格式
-                            for i, rel in enumerate(extracted_relationships[:20]):  # 限制最多20個關係
+                            for i, rel in enumerate(
+                                extracted_relationships[:20]
+                            ):  # 限制最多20個關係
                                 source_name = rel.get("source", "")
                                 target_name = rel.get("target", "")
 
@@ -792,17 +850,21 @@ class RAGAnythingService:
                                 target_id = entity_name_to_id.get(target_name)
 
                                 if source_id and target_id and source_id != target_id:
-                                    relationships.append({
-                                        "source_id": source_id,
-                                        "target_id": target_id,
-                                        "type": rel.get("type", "related_to"),
-                                        "properties": {
-                                            "description": rel.get("description", ""),
-                                            "extraction_method": "llm",
-                                            "confidence": 0.7,
-                                            "company_id": company_id
+                                    relationships.append(
+                                        {
+                                            "source_id": source_id,
+                                            "target_id": target_id,
+                                            "type": rel.get("type", "related_to"),
+                                            "properties": {
+                                                "description": rel.get(
+                                                    "description", ""
+                                                ),
+                                                "extraction_method": "llm",
+                                                "confidence": 0.7,
+                                                "company_id": company_id,
+                                            },
                                         }
-                                    })
+                                    )
 
                         except json.JSONDecodeError:
                             pass
@@ -812,46 +874,50 @@ class RAGAnythingService:
 
             # 基於規則的關係提取（備用方案）
             # 為所有非文檔實體與文檔實體建立 "mentioned_in" 關係
-            document_entities = [e for e in entities if e['type'] == 'Document']
-            non_document_entities = [e for e in entities if e['type'] != 'Document']
+            document_entities = [e for e in entities if e["type"] == "Document"]
+            non_document_entities = [e for e in entities if e["type"] != "Document"]
 
             for doc_entity in document_entities:
                 for other_entity in non_document_entities:
-                    relationships.append({
-                        "source_id": other_entity['id'],
-                        "target_id": doc_entity['id'],
-                        "type": "mentioned_in",
-                        "properties": {
-                            "description": f"{other_entity['name']} is mentioned in {doc_entity['name']}",
-                            "extraction_method": "rule_based",
-                            "confidence": 0.6,
-                            "company_id": company_id
+                    relationships.append(
+                        {
+                            "source_id": other_entity["id"],
+                            "target_id": doc_entity["id"],
+                            "type": "mentioned_in",
+                            "properties": {
+                                "description": f"{other_entity['name']} is mentioned in {doc_entity['name']}",
+                                "extraction_method": "rule_based",
+                                "confidence": 0.6,
+                                "company_id": company_id,
+                            },
                         }
-                    })
+                    )
 
             # 為同類型實體建立 "similar_to" 關係
             entity_types = {}
             for entity in entities:
-                entity_type = entity['type']
+                entity_type = entity["type"]
                 if entity_type not in entity_types:
                     entity_types[entity_type] = []
                 entity_types[entity_type].append(entity)
 
             for entity_type, type_entities in entity_types.items():
-                if len(type_entities) > 1 and entity_type != 'Document':
+                if len(type_entities) > 1 and entity_type != "Document":
                     for i, entity1 in enumerate(type_entities):
-                        for entity2 in type_entities[i+1:]:
-                            relationships.append({
-                                "source_id": entity1['id'],
-                                "target_id": entity2['id'],
-                                "type": "similar_to",
-                                "properties": {
-                                    "description": f"Both are {entity_type} entities",
-                                    "extraction_method": "rule_based",
-                                    "confidence": 0.5,
-                                    "company_id": company_id
+                        for entity2 in type_entities[i + 1 :]:
+                            relationships.append(
+                                {
+                                    "source_id": entity1["id"],
+                                    "target_id": entity2["id"],
+                                    "type": "similar_to",
+                                    "properties": {
+                                        "description": f"Both are {entity_type} entities",
+                                        "extraction_method": "rule_based",
+                                        "confidence": 0.5,
+                                        "company_id": company_id,
+                                    },
                                 }
-                            })
+                            )
 
             return relationships
 

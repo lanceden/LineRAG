@@ -27,13 +27,11 @@ from app.core.exceptions import NotFoundError, ValidationError, PermissionError
 
 
 class CompanyService:
-    """公司管理服務"""
+    """公司管理服務 - 靜態方法模式"""
 
-    def __init__(self, db: Session):
-        self.db = db
-
+    @staticmethod
     def get_companies(
-        self,
+        db: Session,
         page: int = 1,
         limit: int = 20,
         search: Optional[str] = None,
@@ -43,7 +41,7 @@ class CompanyService:
     ) -> CompanyListResponse:
         """獲取公司列表"""
 
-        query = self.db.query(Company)
+        query = db.query(Company)
 
         # 搜尋過濾
         if search:
@@ -83,70 +81,76 @@ class CompanyService:
             has_prev=page > 1,
         )
 
-    def get_company(self, company_id: int) -> Company:
+    @staticmethod
+    def get_company(db: Session, company_id: int) -> Company:
         """獲取單個公司"""
-        company = self.db.query(Company).filter(Company.id == company_id).first()
+        company = db.query(Company).filter(Company.id == company_id).first()
         if not company:
             raise NotFoundError(f"公司 ID {company_id} 不存在")
         return company
 
-    def create_company(self, company_data: CompanyCreate) -> Company:
+    @staticmethod
+    def create_company(db: Session, company_data: CompanyCreate) -> Company:
         """建立新公司"""
 
         # 檢查公司代碼是否重複
-        existing = (
-            self.db.query(Company).filter(Company.code == company_data.code).first()
-        )
+        existing = db.query(Company).filter(Company.code == company_data.code).first()
         if existing:
             raise ValidationError(f"公司代碼 '{company_data.code}' 已存在")
 
         # 檢查公司名稱是否重複
         existing_name = (
-            self.db.query(Company).filter(Company.name == company_data.name).first()
+            db.query(Company).filter(Company.name == company_data.name).first()
         )
         if existing_name:
             raise ValidationError(f"公司名稱 '{company_data.name}' 已存在")
 
         # 建立公司
-        company = Company(**company_data.dict())
+        company = Company(**company_data.model_dump())
 
         # 設定 RAG 工作目錄
         if not company.rag_working_dir:
             company.rag_working_dir = f"/data/rag/{company.code}"
 
-        self.db.add(company)
-        self.db.commit()
-        self.db.refresh(company)
+        db.add(company)
+        db.commit()
+        db.refresh(company)
 
         # 建立工作目錄
-        self._create_company_directories(company)
+        CompanyService._create_company_directories(company)
 
         return company
 
-    def update_company(self, company_id: int, company_data: CompanyUpdate) -> Company:
+    @staticmethod
+    def update_company(
+        db: Session, company_id: int, company_data: CompanyUpdate
+    ) -> Company:
         """更新公司資訊"""
-        company = self.get_company(company_id)
+        company = CompanyService.get_company(db, company_id)
 
         # 更新欄位
-        update_data = company_data.dict(exclude_unset=True)
+        update_data = company_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(company, field, value)
 
         company.updated_at = datetime.utcnow()
 
-        self.db.commit()
-        self.db.refresh(company)
+        db.commit()
+        db.refresh(company)
 
         return company
 
-    def delete_company(self, company_id: int) -> bool:
+    @staticmethod
+    def delete_company(db: Session, company_id: int) -> bool:
         """刪除公司"""
-        company = self.get_company(company_id)
+        company = CompanyService.get_company(db, company_id)
 
         # 檢查是否有關聯資料 - 使用新的權限系統
+        from app.models.permission import UserPermission
+
         user_permissions = (
-            self.db.query(UserPermission)
-            .filter(UserPermission.accessible_companies.any(company_id))
+            db.query(UserPermission)
+            .filter(UserPermission.accessible_companies.any(str(company_id)))
             .count()
         )
 
@@ -157,40 +161,47 @@ class CompanyService:
         company.is_active = False
         company.updated_at = datetime.utcnow()
 
-        self.db.commit()
+        db.commit()
 
         return True
 
-    def activate_company(self, company_id: int) -> Company:
+    @staticmethod
+    def activate_company(db: Session, company_id: int) -> Company:
         """啟用公司"""
-        company = self.get_company(company_id)
+        company = CompanyService.get_company(db, company_id)
         company.is_active = True
         company.updated_at = datetime.utcnow()
 
-        self.db.commit()
-        self.db.refresh(company)
+        db.commit()
+        db.refresh(company)
 
         return company
 
-    def deactivate_company(self, company_id: int) -> Company:
+    @staticmethod
+    def deactivate_company(db: Session, company_id: int) -> Company:
         """停用公司"""
-        company = self.get_company(company_id)
+        company = CompanyService.get_company(db, company_id)
         company.is_active = False
         company.updated_at = datetime.utcnow()
 
-        self.db.commit()
-        self.db.refresh(company)
+        db.commit()
+        db.refresh(company)
 
         return company
 
-    def get_company_stats(self, company_id: int) -> CompanyStats:
+    @staticmethod
+    def get_company_stats(db: Session, company_id: int) -> CompanyStats:
         """獲取公司統計資訊"""
-        company = self.get_company(company_id)
+        company = CompanyService.get_company(db, company_id)
 
         # 用戶統計 - 使用新的權限系統
+        from app.models.permission import UserPermission
+        from app.models.system_user import SystemUser
+        from sqlalchemy import and_
+
         user_permissions_with_company = (
-            self.db.query(UserPermission)
-            .filter(UserPermission.accessible_companies.any(company_id))
+            db.query(UserPermission)
+            .filter(UserPermission.accessible_companies.any(str(company_id)))
             .all()
         )
 
@@ -200,7 +211,7 @@ class CompanyService:
         active_users = 0
         for up in user_permissions_with_company:
             user = (
-                self.db.query(SystemUser)
+                db.query(SystemUser)
                 .filter(and_(SystemUser.id == up.user_id, SystemUser.is_active == True))
                 .first()
             )
@@ -213,7 +224,7 @@ class CompanyService:
             from app.models.document import DocumentMetadata
 
             total_documents = (
-                self.db.query(DocumentMetadata)
+                db.query(DocumentMetadata)
                 .filter(DocumentMetadata.company_id == company_id)
                 .count()
             )
@@ -231,7 +242,9 @@ class CompanyService:
         # 計算儲存使用量 (如果有檔案系統統計)
         if company.rag_working_dir and os.path.exists(company.rag_working_dir):
             try:
-                storage_used = self._calculate_directory_size(company.rag_working_dir)
+                storage_used = CompanyService._calculate_directory_size(
+                    company.rag_working_dir
+                )
             except:
                 pass
 
@@ -246,16 +259,20 @@ class CompanyService:
             last_activity=company.updated_at,
         )
 
+    @staticmethod
     def get_company_users(
-        self, company_id: int, page: int = 1, limit: int = 20
+        db: Session, company_id: int, page: int = 1, limit: int = 20
     ) -> CompanyUserListResponse:
         """獲取公司用戶列表"""
-        company = self.get_company(company_id)
+        # 驗證公司存在
+        CompanyService.get_company(db, company_id)
 
         # 使用新的權限系統獲取有此公司存取權限的用戶
+        from app.models.permission import UserPermission
+
         user_permissions_with_company = (
-            self.db.query(UserPermission)
-            .filter(UserPermission.accessible_companies.any(company_id))
+            db.query(UserPermission)
+            .filter(UserPermission.accessible_companies.any(str(company_id)))
             .offset((page - 1) * limit)
             .limit(limit)
             .all()
@@ -263,18 +280,18 @@ class CompanyService:
 
         # 獲取總數
         total = (
-            self.db.query(UserPermission)
-            .filter(UserPermission.accessible_companies.any(company_id))
+            db.query(UserPermission)
+            .filter(UserPermission.accessible_companies.any(str(company_id)))
             .count()
         )
 
         # 轉換為公司用戶格式
+        from app.models.system_user import SystemUser
+
         company_users = []
         for user_perm in user_permissions_with_company:
             user = (
-                self.db.query(SystemUser)
-                .filter(SystemUser.id == user_perm.user_id)
-                .first()
+                db.query(SystemUser).filter(SystemUser.id == user_perm.user_id).first()
             )
             if user:
                 company_users.append(
@@ -294,7 +311,10 @@ class CompanyService:
             users=company_users, total=total, page=page, limit=limit
         )
 
-    def batch_operation(self, request: BatchOperationRequest) -> BatchOperationResponse:
+    @staticmethod
+    def batch_operation(
+        db: Session, request: BatchOperationRequest
+    ) -> BatchOperationResponse:
         """批次操作公司"""
         success_count = 0
         failed_count = 0
@@ -303,11 +323,11 @@ class CompanyService:
         for company_id in request.company_ids:
             try:
                 if request.operation == "activate":
-                    self.activate_company(company_id)
+                    CompanyService.activate_company(db, company_id)
                 elif request.operation == "deactivate":
-                    self.deactivate_company(company_id)
+                    CompanyService.deactivate_company(db, company_id)
                 elif request.operation == "delete":
-                    self.delete_company(company_id)
+                    CompanyService.delete_company(db, company_id)
                 else:
                     raise ValidationError(f"不支援的操作: {request.operation}")
 
@@ -386,9 +406,10 @@ class CompanyService:
 
         return invitation
 
-    def get_company_settings(self, company_id: int) -> dict:
+    @staticmethod
+    def get_company_settings(db: Session, company_id: int) -> dict:
         """獲取公司設定"""
-        company = self.get_company(company_id)
+        company = CompanyService.get_company(db, company_id)
 
         return {
             "line_bot_enabled": company.line_bot_enabled,
@@ -411,9 +432,10 @@ class CompanyService:
             },
         }
 
-    def update_company_settings(self, company_id: int, settings: dict) -> dict:
+    @staticmethod
+    def update_company_settings(db: Session, company_id: int, settings: dict) -> dict:
         """更新公司設定"""
-        company = self.get_company(company_id)
+        company = CompanyService.get_company(db, company_id)
 
         # 更新可設定的欄位
         if "line_bot_enabled" in settings:
@@ -432,13 +454,75 @@ class CompanyService:
             company.storage_quota_gb = settings["storage_quota_gb"]
 
         company.updated_at = datetime.utcnow()
-        self.db.commit()
-        self.db.refresh(company)
+        db.commit()
+        db.refresh(company)
 
-        return self.get_company_settings(company_id)
+        return CompanyService.get_company_settings(db, company_id)
 
-    def _create_company_directories(self, company: Company):
+    @staticmethod
+    def get_company_by_code(db: Session, company_code: str) -> Optional[Company]:
+        """根據公司代碼獲取公司"""
+        return (
+            db.query(Company)
+            .filter(Company.code == company_code, Company.is_active == True)
+            .first()
+        )
+
+    @staticmethod
+    def get_company_by_line_channel(
+        db: Session, channel_token: str
+    ) -> Optional[Company]:
+        """根據 LINE Channel Token 獲取公司"""
+        return (
+            db.query(Company)
+            .filter(
+                Company.line_channel_token == channel_token,
+                Company.is_active == True,
+                Company.line_bot_enabled == True,
+            )
+            .first()
+        )
+
+    @staticmethod
+    def update_line_settings(
+        db: Session,
+        company_id: int,
+        channel_token: str,
+        channel_secret: str,
+        bot_enabled: bool = True,
+    ) -> Company:
+        """更新公司的 LINE 設定"""
+        company = CompanyService.get_company(db, company_id)
+
+        # 檢查 Channel Token 是否已被其他公司使用
+        if channel_token:
+            existing = (
+                db.query(Company)
+                .filter(
+                    Company.line_channel_token == channel_token,
+                    Company.id != company_id,
+                )
+                .first()
+            )
+            if existing:
+                raise ValidationError(
+                    f"LINE Channel Token 已被公司 '{existing.name}' 使用"
+                )
+
+        company.line_channel_token = channel_token
+        company.line_channel_secret = channel_secret
+        company.line_bot_enabled = bot_enabled
+        company.updated_at = datetime.utcnow()
+
+        db.commit()
+        db.refresh(company)
+        return company
+
+    @staticmethod
+    def _create_company_directories(company: Company):
         """建立公司相關目錄"""
+        import os
+
         if company.rag_working_dir:
             try:
                 os.makedirs(company.rag_working_dir, exist_ok=True)
@@ -448,8 +532,11 @@ class CompanyService:
             except Exception as e:
                 print(f"建立目錄失敗: {e}")
 
-    def _calculate_directory_size(self, directory: str) -> int:
+    @staticmethod
+    def _calculate_directory_size(directory: str) -> int:
         """計算目錄大小"""
+        import os
+
         total_size = 0
         try:
             for dirpath, _, filenames in os.walk(directory):

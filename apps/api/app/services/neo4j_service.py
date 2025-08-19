@@ -22,7 +22,7 @@ class Neo4jService:
     def __init__(self):
         self.driver = None
         self.initialized = False
-        
+
         # Neo4j 連接配置
         self.uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
         self.username = os.getenv("NEO4J_USERNAME", "neo4j")
@@ -40,15 +40,15 @@ class Neo4jService:
                 auth=(self.username, self.password),
                 max_connection_lifetime=3600,
                 max_connection_pool_size=50,
-                connection_acquisition_timeout=60
+                connection_acquisition_timeout=60,
             )
 
             # 測試連接
             await self.verify_connectivity()
-            
+
             # 建立索引和約束
             await self.create_indexes_and_constraints()
-            
+
             self.initialized = True
             logger.info("✅ Neo4j service initialized successfully")
 
@@ -72,11 +72,9 @@ class Neo4jService:
                 # 實體約束
                 "CREATE CONSTRAINT entity_id_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE",
                 "CREATE CONSTRAINT entity_company_id IF NOT EXISTS FOR (e:Entity) REQUIRE e.company_id IS NOT NULL",
-                
                 # 文檔約束
                 "CREATE CONSTRAINT document_id_unique IF NOT EXISTS FOR (d:Document) REQUIRE d.id IS UNIQUE",
                 "CREATE CONSTRAINT document_company_id IF NOT EXISTS FOR (d:Document) REQUIRE d.company_id IS NOT NULL",
-                
                 # 索引
                 "CREATE INDEX entity_name_index IF NOT EXISTS FOR (e:Entity) ON (e.name)",
                 "CREATE INDEX entity_type_index IF NOT EXISTS FOR (e:Entity) ON (e.type)",
@@ -107,21 +105,30 @@ class Neo4jService:
                 e.updated_at = datetime()
             RETURN e.id as entity_id
             """
-            
-            result = await session.run(query, {
-                "entity_id": entity_data.get("id"),
-                "company_id": company_id,
-                "name": entity_data.get("name"),
-                "type": entity_data.get("type"),
-                "description": entity_data.get("description", ""),
-                "properties": entity_data.get("properties", {})
-            })
-            
+
+            result = await session.run(
+                query,
+                {
+                    "entity_id": entity_data.get("id"),
+                    "company_id": company_id,
+                    "name": entity_data.get("name"),
+                    "type": entity_data.get("type"),
+                    "description": entity_data.get("description", ""),
+                    "properties": entity_data.get("properties", {}),
+                },
+            )
+
             record = await result.single()
             return record["entity_id"] if record else None
 
-    async def create_relationship(self, company_id: int, source_id: str, target_id: str, 
-                                relationship_type: str, properties: Dict[str, Any] = None) -> bool:
+    async def create_relationship(
+        self,
+        company_id: int,
+        source_id: str,
+        target_id: str,
+        relationship_type: str,
+        properties: Dict[str, Any] = None,
+    ) -> bool:
         """建立實體關係"""
         if not self.initialized:
             await self.initialize()
@@ -136,18 +143,23 @@ class Neo4jService:
                 r.updated_at = datetime()
             RETURN r
             """
-            
-            result = await session.run(query, {
-                "source_id": source_id,
-                "target_id": target_id,
-                "company_id": company_id,
-                "rel_type": relationship_type,
-                "properties": properties or {}
-            })
-            
+
+            result = await session.run(
+                query,
+                {
+                    "source_id": source_id,
+                    "target_id": target_id,
+                    "company_id": company_id,
+                    "rel_type": relationship_type,
+                    "properties": properties or {},
+                },
+            )
+
             return await result.single() is not None
 
-    async def create_document_node(self, company_id: int, document_data: Dict[str, Any]) -> str:
+    async def create_document_node(
+        self, company_id: int, document_data: Dict[str, Any]
+    ) -> str:
         """建立文檔節點"""
         if not self.initialized:
             await self.initialize()
@@ -164,21 +176,26 @@ class Neo4jService:
                 d.updated_at = datetime()
             RETURN d.id as document_id
             """
-            
-            result = await session.run(query, {
-                "doc_id": document_data.get("id"),
-                "company_id": company_id,
-                "filename": document_data.get("filename"),
-                "file_path": document_data.get("file_path"),
-                "file_type": document_data.get("file_type"),
-                "file_size": document_data.get("file_size", 0),
-                "metadata": document_data.get("metadata", {})
-            })
-            
+
+            result = await session.run(
+                query,
+                {
+                    "doc_id": document_data.get("id"),
+                    "company_id": company_id,
+                    "filename": document_data.get("filename"),
+                    "file_path": document_data.get("file_path"),
+                    "file_type": document_data.get("file_type"),
+                    "file_size": document_data.get("file_size", 0),
+                    "metadata": document_data.get("metadata", {}),
+                },
+            )
+
             record = await result.single()
             return record["document_id"] if record else None
 
-    async def link_entity_to_document(self, company_id: int, entity_id: str, document_id: str) -> bool:
+    async def link_entity_to_document(
+        self, company_id: int, entity_id: str, document_id: str
+    ) -> bool:
         """連結實體到文檔"""
         if not self.initialized:
             await self.initialize()
@@ -191,17 +208,21 @@ class Neo4jService:
             SET r.created_at = datetime()
             RETURN r
             """
-            
-            result = await session.run(query, {
-                "entity_id": entity_id,
-                "document_id": document_id,
-                "company_id": company_id
-            })
-            
+
+            result = await session.run(
+                query,
+                {
+                    "entity_id": entity_id,
+                    "document_id": document_id,
+                    "company_id": company_id,
+                },
+            )
+
             return await result.single() is not None
 
-    async def query_related_entities(self, company_id: int, entity_id: str, 
-                                   max_depth: int = 2) -> List[Dict[str, Any]]:
+    async def query_related_entities(
+        self, company_id: int, entity_id: str, max_depth: int = 2
+    ) -> List[Dict[str, Any]]:
         """查詢相關實體"""
         if not self.initialized:
             await self.initialize()
@@ -219,27 +240,37 @@ class Neo4jService:
             ORDER BY distance, related.name
             LIMIT 50
             """
-            
-            result = await session.run(query, {
-                "entity_id": entity_id,
-                "company_id": company_id,
-                "max_depth": max_depth
-            })
-            
+
+            result = await session.run(
+                query,
+                {
+                    "entity_id": entity_id,
+                    "company_id": company_id,
+                    "max_depth": max_depth,
+                },
+            )
+
             entities = []
             async for record in result:
-                entities.append({
-                    "id": record["id"],
-                    "name": record["name"],
-                    "type": record["type"],
-                    "description": record["description"],
-                    "distance": record["distance"]
-                })
-            
+                entities.append(
+                    {
+                        "id": record["id"],
+                        "name": record["name"],
+                        "type": record["type"],
+                        "description": record["description"],
+                        "distance": record["distance"],
+                    }
+                )
+
             return entities
 
-    async def search_entities(self, company_id: int, search_term: str, 
-                            entity_type: str = None, limit: int = 20) -> List[Dict[str, Any]]:
+    async def search_entities(
+        self,
+        company_id: int,
+        search_term: str,
+        entity_type: str = None,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
         """搜尋實體"""
         if not self.initialized:
             await self.initialize()
@@ -247,15 +278,21 @@ class Neo4jService:
         async with self.driver.session() as session:
             # 建構查詢條件
             where_conditions = ["e.company_id = $company_id"]
-            params = {"company_id": company_id, "search_term": search_term, "limit": limit}
-            
+            params = {
+                "company_id": company_id,
+                "search_term": search_term,
+                "limit": limit,
+            }
+
             if entity_type:
                 where_conditions.append("e.type = $entity_type")
                 params["entity_type"] = entity_type
-            
+
             # 使用全文搜尋或模糊匹配
-            where_conditions.append("(e.name CONTAINS $search_term OR e.description CONTAINS $search_term)")
-            
+            where_conditions.append(
+                "(e.name CONTAINS $search_term OR e.description CONTAINS $search_term)"
+            )
+
             query = f"""
             MATCH (e:Entity)
             WHERE {" AND ".join(where_conditions)}
@@ -267,19 +304,21 @@ class Neo4jService:
             ORDER BY e.name
             LIMIT $limit
             """
-            
+
             result = await session.run(query, params)
-            
+
             entities = []
             async for record in result:
-                entities.append({
-                    "id": record["id"],
-                    "name": record["name"],
-                    "type": record["type"],
-                    "description": record["description"],
-                    "properties": record["properties"]
-                })
-            
+                entities.append(
+                    {
+                        "id": record["id"],
+                        "name": record["name"],
+                        "type": record["type"],
+                        "description": record["description"],
+                        "properties": record["properties"],
+                    }
+                )
+
             return entities
 
     async def get_company_graph_stats(self, company_id: int) -> Dict[str, Any]:
@@ -296,14 +335,14 @@ class Neo4jService:
                    count(DISTINCT d) as document_count,
                    count(DISTINCT r) as relationship_count
             """
-            
+
             result = await session.run(query, {"company_id": company_id})
             record = await result.single()
-            
+
             return {
                 "entity_count": record["entity_count"] if record else 0,
                 "document_count": record["document_count"] if record else 0,
-                "relationship_count": record["relationship_count"] if record else 0
+                "relationship_count": record["relationship_count"] if record else 0,
             }
 
     async def delete_company_data(self, company_id: int) -> bool:
@@ -317,7 +356,7 @@ class Neo4jService:
             MATCH (n {company_id: $company_id})
             DETACH DELETE n
             """
-            
+
             await session.run(query, {"company_id": company_id})
             return True
 

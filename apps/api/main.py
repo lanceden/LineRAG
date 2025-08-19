@@ -11,6 +11,7 @@ from app.core.middleware import PermissionMiddleware
 
 # Services (initialize on startup)
 from app.services.multitenant_rag import get_multitenant_rag_service
+from app.services.rag_anything import get_rag_service
 
 # Routers
 from app.routers.health import router as health_router
@@ -47,6 +48,22 @@ async def lifespan(app: FastAPI):
     multitenant_rag_service = get_multitenant_rag_service()
     logger.info("✅ Multi-Tenant RAG service initialized successfully")
 
+    # Initialize RAG-Anything service
+    try:
+        rag_service = get_rag_service()
+        logger.info(
+            "📦 RAG-Anything service instance created, attempting initialization..."
+        )
+        await rag_service.initialize()
+        logger.info("✅ RAG-Anything service initialized successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize RAG-Anything service: {e}")
+        logger.error(f"❌ Error type: {type(e).__name__}")
+        import traceback
+
+        logger.error(f"❌ Full traceback: {traceback.format_exc()}")
+        # Continue anyway, service will be initialized on first use
+
     yield
 
     # Shutdown
@@ -65,10 +82,15 @@ app = FastAPI(
 # Configure CORS FIRST (必須在其他中間件之前)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
