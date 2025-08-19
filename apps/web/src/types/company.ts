@@ -94,6 +94,12 @@ export interface UpdateCompanyRequest {
   email?: string
   address?: string
   is_active?: boolean
+  // 系統配置欄位
+  max_documents?: number
+  max_queries_per_month?: number
+  storage_quota_gb?: number
+  rag_working_dir?: string
+  subscription_plan?: string
   settings?: Partial<CompanySettings>
 }
 
