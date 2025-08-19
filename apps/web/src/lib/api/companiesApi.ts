@@ -110,4 +110,28 @@ export const companiesApi = {
     role: string
   }> =>
     httpClient.put(`/api/companies/${id}/users/${userId}/role`, { role }),
+
+  /**
+   * 更新 LINE 設定
+   */
+  updateLineSettings: (id: number, settings: {
+    line_channel_token: string
+    line_channel_secret: string
+    line_bot_enabled: boolean
+  }): Promise<Company> =>
+    httpClient.put(`/api/companies/${id}/line-settings`, settings),
+
+  /**
+   * 測試 LINE 連線
+   */
+  testLineConnection: (id: number): Promise<{ success: boolean; message: string }> =>
+    httpClient.post(`/api/companies/${id}/line-settings/test`),
+
+  /**
+   * 獲取 Webhook URL
+   */
+  getWebhookUrl: (companyCode: string): string => {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    return `${baseUrl}/api/webhook/${companyCode}`
+  },
 }

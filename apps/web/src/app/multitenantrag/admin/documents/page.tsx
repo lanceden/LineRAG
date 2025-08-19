@@ -1,58 +1,91 @@
-'use client'
+"use client"
 
-import React, { useState, useEffect } from 'react'
-import { useSession } from 'next-auth/react'
-import { Sidebar } from '@/components/Sidebar'
-import { DocumentUpload } from '@/components/documents/DocumentUpload'
-import { DocumentList } from '@/components/documents/DocumentList'
-import { ProcessingStatus } from '@/components/documents/ProcessingStatus'
-import { companiesApi, documentsApi } from '@/lib/api'
-import { FileText, Upload, List, Activity } from 'lucide-react'
+import React, { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
+import { Sidebar } from "@/components/Sidebar"
+import { DocumentUpload } from "@/components/documents/DocumentUpload"
+import { DocumentList } from "@/components/documents/DocumentList"
+import { companiesApi, documentsApi } from "@/lib/api"
+import { FileText, Upload, List, Activity } from "lucide-react"
+import type { DocumentMetadata } from "@/types/document"
+import type { Company } from "@/types/user"
+
+interface SessionUser {
+  id: number
+  username: string
+  email: string
+  full_name: string
+  role?: string
+  company_id?: number
+}
 
 export default function DocumentsPage() {
   const { data: session } = useSession()
-  const [activeTab, setActiveTab] = useState<'upload' | 'list' | 'processing'>('upload')
-  const [documents, setDocuments] = useState<any[]>([])
-  const [processingTasks, setProcessingTasks] = useState<any[]>([])
+  const [activeTab, setActiveTab] = useState<"upload" | "list" | "processing">(
+    "upload"
+  )
+  const [documents, setDocuments] = useState<DocumentMetadata[]>([])
+  const [processingTasks, setProcessingTasks] = useState<DocumentMetadata[]>([])
   const [loading, setLoading] = useState(false)
   const [userCompanyId, setUserCompanyId] = useState<number | null>(null)
+  const [companies, setCompanies] = useState<Company[]>([])
+
+  // 獲取公司列表
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        const response = await companiesApi.getList()
+        setCompanies(response.companies || [])
+      } catch (error) {
+        console.error("獲取公司列表失敗:", error)
+      }
+    }
+    fetchCompanies()
+  }, [])
 
   // 獲取用戶所屬公司 ID
   useEffect(() => {
     const fetchUserCompany = async () => {
       if (!session?.user) return
-      
+
       try {
+        const user = session.user as unknown as SessionUser
+
         // 如果是 super_admin，可以選擇公司；否則使用用戶所屬公司
-        if (session.user.role === 'super_admin') {
-          // 暫時使用第一個公司，後續可以添加公司選擇器
-          const companies = await companiesApi.getList()
-          if (companies.companies && companies.companies.length > 0) {
-            setUserCompanyId(companies.companies[0].id)
+        if (user.role === "super_admin") {
+          // 獲取所有公司列表供選擇
+          if (companies.length > 0) {
+            setUserCompanyId(companies[0].id)
           }
         } else {
           // 一般用戶，獲取所屬公司
-          // TODO: 實作獲取用戶所屬公司的 API
-          setUserCompanyId(1) // 暫時硬編碼
+          const userCompany = companies.find((c) => c.id === user.company_id)
+          if (userCompany) {
+            setUserCompanyId(userCompany.id)
+          } else if (companies.length > 0) {
+            setUserCompanyId(companies[0].id)
+          }
         }
       } catch (error) {
-        console.error('獲取用戶公司失敗:', error)
+        console.error("獲取用戶公司失敗:", error)
       }
     }
 
-    fetchUserCompany()
-  }, [session])
+    if (companies.length > 0) {
+      fetchUserCompany()
+    }
+  }, [session, companies])
 
   // 載入文檔列表
   const loadDocuments = async () => {
     if (!userCompanyId) return
-    
+
     setLoading(true)
     try {
       const result = await documentsApi.getCompanyDocuments(userCompanyId)
       setDocuments(result.documents || [])
     } catch (error) {
-      console.error('載入文檔列表失敗:', error)
+      console.error("載入文檔列表失敗:", error)
     } finally {
       setLoading(false)
     }
@@ -65,41 +98,41 @@ export default function DocumentsPage() {
   }
 
   useEffect(() => {
-    if (activeTab === 'list') {
+    if (activeTab === "list") {
       loadDocuments()
-    } else if (activeTab === 'processing') {
+    } else if (activeTab === "processing") {
       loadProcessingTasks()
     }
   }, [activeTab, userCompanyId])
 
   // 處理文檔上傳完成
-  const handleUploadComplete = (result: any) => {
-    console.log('文檔上傳完成:', result)
+  const handleUploadComplete = (result: DocumentMetadata) => {
+    console.log("文檔上傳完成:", result)
     // 如果在列表標籤，重新載入列表
-    if (activeTab === 'list') {
+    if (activeTab === "list") {
       loadDocuments()
     }
     // 切換到處理狀態標籤
-    setActiveTab('processing')
+    setActiveTab("processing")
   }
 
   // 處理文檔刪除
-  const handleDocumentDelete = async (documentId: string) => {
+  const handleDocumentDelete = async (document: DocumentMetadata) => {
     if (!userCompanyId) return
-    
+
     try {
-      await documentsApi.delete(documentId)
+      await documentsApi.delete(document.id)
       // 重新載入文檔列表
       loadDocuments()
     } catch (error) {
-      console.error('刪除文檔失敗:', error)
+      console.error("刪除文檔失敗:", error)
     }
   }
 
   const tabs = [
-    { id: 'upload', name: '上傳文檔', icon: Upload },
-    { id: 'list', name: '文檔列表', icon: List },
-    { id: 'processing', name: '處理狀態', icon: Activity },
+    { id: "upload", name: "上傳文檔", icon: Upload },
+    { id: "list", name: "文檔列表", icon: List },
+    { id: "processing", name: "處理狀態", icon: Activity },
   ]
 
   if (!session) {
@@ -149,13 +182,14 @@ export default function DocumentsPage() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
+                  onClick={() =>
+                    setActiveTab(tab.id as "upload" | "list" | "processing")
+                  }
                   className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm ${
                     activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
+                      ? "border-blue-500 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}>
                   <Icon className="h-4 w-4" />
                   <span>{tab.name}</span>
                 </button>
@@ -166,17 +200,17 @@ export default function DocumentsPage() {
 
         {/* 標籤內容 */}
         <div className="space-y-6">
-          {activeTab === 'upload' && (
+          {activeTab === "upload" && (
             <div className="bg-white rounded-lg shadow p-6">
               <DocumentUpload
                 companyId={userCompanyId}
                 onUploadComplete={handleUploadComplete}
-                onUploadError={(error) => console.error('上傳錯誤:', error)}
+                onUploadError={(error) => console.error("上傳錯誤:", error)}
               />
             </div>
           )}
 
-          {activeTab === 'list' && (
+          {activeTab === "list" && (
             <div className="bg-white rounded-lg shadow p-6">
               <DocumentList
                 companyId={userCompanyId}
@@ -187,12 +221,15 @@ export default function DocumentsPage() {
             </div>
           )}
 
-          {activeTab === 'processing' && (
+          {activeTab === "processing" && (
             <div className="bg-white rounded-lg shadow p-6">
-              <ProcessingStatus
-                tasks={processingTasks}
-                onRefresh={loadProcessingTasks}
-              />
+              <div className="text-center py-8">
+                <Activity className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  處理狀態
+                </h3>
+                <p className="text-sm text-gray-500">暫無處理中的任務</p>
+              </div>
             </div>
           )}
         </div>

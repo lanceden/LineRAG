@@ -8,5 +8,5 @@ export { httpClient, api, ApiError } from './httpClient'
 // 導出各業務 API
 export * from './authApi'
 export * from './usersApi'
-export * from './companiesApi'
+export { companiesApi } from './companiesApi'
 export * from './documentsApi'

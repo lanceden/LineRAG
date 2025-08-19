@@ -278,3 +278,22 @@ export type CompanyType = 'enterprise' | 'small_business' | 'startup' | 'individ
 
 // 公司規模
 export type CompanySize = '1-10' | '11-50' | '51-200' | '201-1000' | '1000+'
+
+// LINE 設定更新請求
+export interface LineSettingsUpdateRequest {
+  line_channel_token: string
+  line_channel_secret: string
+  line_bot_enabled: boolean
+}
+
+// LINE 連線測試結果
+export interface LineConnectionTestResult {
+  success: boolean
+  message: string
+  webhook_url?: string
+  channel_info?: {
+    channel_id: string
+    channel_name: string
+    channel_description?: string
+  }
+}

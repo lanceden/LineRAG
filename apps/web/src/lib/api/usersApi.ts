@@ -13,7 +13,6 @@ import type {
   UserPermission,
   UserPermissionRequest,
   PermissionMatrix,
-  Company,
 } from '@/types/user'
 
 export const usersApi = {
@@ -107,19 +106,4 @@ export const permissionsApi = {
     has_all_companies: boolean
   }>> =>
     httpClient.post('/api/permissions/users/summary', { user_ids: userIds }),
-}
-
-// 公司管理相關API  
-export const companiesApi = {
-  /**
-   * 獲取所有公司列表
-   */
-  getAll: (): Promise<Company[]> =>
-    httpClient.get('/api/companies/'),
-
-  /**
-   * 獲取激活的公司列表
-   */
-  getActive: (): Promise<Company[]> =>
-    httpClient.get('/api/companies/?is_active=true'),
 }
