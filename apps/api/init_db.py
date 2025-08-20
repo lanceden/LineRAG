@@ -183,35 +183,29 @@ def initialize_default_permissions(db: Session) -> List[Permission]:
         ("company.edit", "編輯公司", "公司管理"),
         ("company.delete", "刪除公司", "公司管理"),
         ("company.stats", "公司統計", "公司管理"),
-        
         # 用戶管理
         ("user.view", "查看用戶", "用戶管理"),
         ("user.create", "建立用戶", "用戶管理"),
         ("user.edit", "編輯用戶", "用戶管理"),
         ("user.delete", "刪除用戶", "用戶管理"),
-        
         # 權限管理
         ("permission.view", "查看權限", "權限管理"),
         ("permission.edit", "編輯權限", "權限管理"),
-        
         # 文檔管理
         ("document.view", "查看文檔", "文檔管理"),
         ("document.upload", "上傳文檔", "文檔管理"),
         ("document.edit", "編輯文檔", "文檔管理"),
         ("document.delete", "刪除文檔", "文檔管理"),
         ("document.stats", "文檔統計", "文檔管理"),
-        
         # 對話管理
         ("chat.view", "查看對話", "對話管理"),
         ("chat.reply", "回覆對話", "對話管理"),
         ("chat.delete", "刪除對話", "對話管理"),
         ("chat.stats", "對話統計", "對話管理"),
-        
         # 報表分析
         ("report.view", "查看報表", "報表分析"),
         ("report.export", "匯出報表", "報表分析"),
         ("report.custom", "自訂報表", "報表分析"),
-        
         # 系統設定
         ("system.setting", "基本設定", "系統設定"),
         ("system.ai", "AI 設定", "系統設定"),
@@ -260,7 +254,6 @@ def init_permission_system(db: Session, admin_user_id: int, companies: list):
     print(f"   - Company access: {len(company_ids)} companies + global access")
 
 
-
 def show_permissions():
     """顯示所有權限"""
     db = SessionLocal()
@@ -269,20 +262,20 @@ def show_permissions():
             db.query(Permission).order_by(Permission.category, Permission.code).all()
         )
 
-        print("\n📋 All Permissions:")
+        print("\n[INFO] All Permissions:")
         print("-" * 80)
 
         current_category = None
         for permission in permissions:
             if permission.category != current_category:
                 current_category = permission.category
-                print(f"\n🏷️  {current_category}:")
+                print(f"\n[CATEGORY] {current_category}:")
                 print("-" * 40)
 
-            status = "🟢" if permission.is_active else "🔴"
+            status = "[ACTIVE]" if permission.is_active else "[INACTIVE]"
             print(f"   {status} {permission.code:<30} {permission.name}")
 
-        print(f"\n📊 Total: {len(permissions)} permissions")
+        print(f"\n[TOTAL] {len(permissions)} permissions")
 
     finally:
         db.close()
@@ -298,7 +291,7 @@ def show_user_permissions(username: str = None):
             users = db.query(SystemUser).filter(SystemUser.is_active == True).all()
 
         if not users:
-            print(f"❌ User not found: {username}")
+            print(f"[ERROR] User not found: {username}")
             return
 
         print(f"\n👥 User Permissions:")
