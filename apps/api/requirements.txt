@@ -10,17 +10,16 @@ pydantic
 requests
 httpx
 
-# RAG-Anything framework - Multi-modal RAG system
-raganything[all]
-
-# Vector database (Qdrant for RAG-Anything)
+# OCR RAG 架構依賴
+sentence-transformers
 qdrant-client
-
-# Graph database (Neo4j for Knowledge Graph)
-neo4j
-
-# LightRAG 外部存儲支援
-lightrag-hku[neo4j,qdrant]
+pillow
+pytesseract
+python-docx
+PyPDF2
+pdf2image
+pandas
+openpyxl
 
 # OpenAI API integration
 openai

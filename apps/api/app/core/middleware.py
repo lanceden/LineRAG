@@ -19,6 +19,7 @@ from app.models.permission import UserPermission
 
 # 不需要認證的路徑
 EXEMPT_PATHS = {
+    "/",  # 根路徑
     "/api/",
     "/api/docs",
     "/api/openapi.json",
@@ -26,7 +27,8 @@ EXEMPT_PATHS = {
     "/api/health",
     "/api/auth/login",
     "/api/auth/refresh",
-    "/api/webhook",  # LINE webhook
+    "/api/webhook",  # LINE webhook (標準路徑)
+    "/webhook",  # LINE webhook (簡化路徑)
     "/docs",
     "/redoc",
 }
@@ -134,6 +136,8 @@ class PermissionMiddleware(BaseHTTPMiddleware):
             path in EXEMPT_PATHS
             or path.startswith("/docs")
             or path.startswith("/api/docs")
+            or path.endswith("/webhook")  # 支援各種 webhook 路徑變體
+            or "webhook" in path.lower()  # 更寬鬆的 webhook 路徑匹配
         )
 
     def _unauthorized_response(self, detail: str) -> JSONResponse:

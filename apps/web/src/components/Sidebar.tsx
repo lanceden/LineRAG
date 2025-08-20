@@ -1,43 +1,37 @@
 "use client"
 
 import { useSession, signOut } from "next-auth/react"
-import { usePathname, useParams } from "next/navigation"
+import { usePathname } from "next/navigation"
 import Link from "next/link"
 import { useState, useMemo } from "react"
-import { CompanySelector } from "./CompanySelector"
 
 export function Sidebar() {
   const { data: session } = useSession()
   const pathname = usePathname()
-  const params = useParams()
   const [isCollapsed, setIsCollapsed] = useState(false)
 
   // 固定選單 - 所有用戶都能看到所有選單項目
   const navigation = useMemo(() => {
     if (!session) return []
 
-    const currentCompanyId = params.companyId as string
-    
     // 固定的選單項目
     const nav = [
       { name: "公司管理", href: "/multitenantrag/admin/companies", icon: "🏢" },
       { name: "用戶管理", href: "/multitenantrag/admin/users", icon: "👥" },
-      { name: "權限管理", href: "/multitenantrag/admin/permissions", icon: "🔐" },
-      { name: "文檔管理", href: "/multitenantrag/admin/documents", icon: "📄" },
-      { name: "系統監控", href: "/multitenantrag/admin/monitoring", icon: "📊" },
+      {
+        name: "權限管理",
+        href: "/multitenantrag/admin/permissions",
+        icon: "🔐",
+      },
+      {
+        name: "系統監控",
+        href: "/multitenantrag/admin/monitoring",
+        icon: "📊",
+      },
     ]
 
-    // 如果有選定公司，加入公司相關選單
-    if (currentCompanyId) {
-      nav.push(
-        { name: "公司儀表板", href: `/multitenantrag/company/${currentCompanyId}`, icon: "📊" },
-        { name: "對話記錄", href: `/multitenantrag/company/${currentCompanyId}/chats`, icon: "💬" },
-        { name: "公司設定", href: `/multitenantrag/company/${currentCompanyId}/settings`, icon: "⚙️" }
-      )
-    }
-
     return nav
-  }, [session, params.companyId])
+  }, [session])
 
   if (!session) return null
 
@@ -58,21 +52,12 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* 公司選擇器 */}
-      {!isCollapsed &&
-        session?.user?.companies &&
-        session.user.companies.length > 0 && (
-          <div className="px-4 py-2 border-b border-gray-200">
-            <CompanySelector />
-          </div>
-        )}
-
       {/* Navigation */}
       <nav className="mt-4 px-2">
         <ul className="space-y-1">
           {navigation.map((item) => {
             const isActive = pathname === item.href
-            
+
             return (
               <li key={item.name}>
                 <Link

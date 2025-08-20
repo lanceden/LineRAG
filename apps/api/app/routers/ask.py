@@ -5,7 +5,6 @@ import json
 from typing import Optional
 
 from app.schemas.ask import AskRequest, MultimodalAskRequest
-from app.services.rag_anything import get_rag_service
 from app.services.multitenant_rag import get_multitenant_rag_service
 from app.core.database import get_db
 
@@ -68,15 +67,13 @@ async def ask(input: AskRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/ask/multimodal")
-async def ask_multimodal(input: MultimodalAskRequest):
+async def ask_multimodal(input: MultimodalAskRequest, db: Session = Depends(get_db)):
     """
     處理包含多模態內容的提問請求。
-    使用 RAG-Anything 進行多模態查詢。
+    使用 OCR RAG 進行多模態查詢。
     """
-    rag_service = get_rag_service()
-
-    if not rag_service.initialized:
-        raise HTTPException(status_code=503, detail="RAG service not initialized")
+    # 獲取 company_id
+    company_id = input.company_id
 
     def generate():
         try:
@@ -90,16 +87,18 @@ async def ask_multimodal(input: MultimodalAskRequest):
             if not user_query:
                 raise ValueError("No user query found in messages")
 
-            # 使用 RAG-Anything 進行多模態查詢
+            # 使用多租戶 OCR RAG 服務進行查詢
             import asyncio
 
-            answer = asyncio.run(
-                rag_service.query_multimodal(
-                    query=user_query,
-                    multimodal_content=input.multimodal_content,
-                    mode="hybrid",
+            async def query_with_company():
+                multitenant_rag = get_multitenant_rag_service()
+                rag_service = await multitenant_rag.get_company_rag_service(
+                    company_id, db
                 )
-            )
+                # OCR RAG 將多模態內容作為一般文本查詢處理
+                return await rag_service.query_text(user_query, mode="hybrid")
+
+            answer = asyncio.run(query_with_company())
 
             # 發送答案內容
             yield f"data: {json.dumps({'type': 'text', 'text': answer})}\n\n"

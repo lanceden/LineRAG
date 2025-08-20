@@ -1,447 +1,304 @@
 "use client"
 
-import React, { useState, useCallback, useMemo } from "react"
+import React, { useState, useEffect } from "react"
 import {
   Plus,
-  RefreshCw,
-  Download,
-  Upload,
-  Building2,
+  MessageSquare,
+  FileText,
   BarChart3,
+  Settings,
+  Zap,
+  AlertCircle,
 } from "lucide-react"
-import { CompanyList } from "@/components/companies/CompanyList"
-import { CompanyForm } from "@/components/companies/CompanyForm"
-import { useCompanies, useCompanyOperations } from "@/hooks/useCompanies"
-import type {
-  Company,
-  CreateCompanyRequest,
-  UpdateCompanyRequest,
-  CompanyListParams,
-} from "@/types/company"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { companiesApi } from "@/lib/api/companiesApi"
+import { Company } from "@/types/company"
+import { useRouter } from "next/navigation"
+import { CompanyCard } from "@/components/companies/CompanyCard"
+import { 
+  LineSettingsDialog,
+  CompanyFormDialog,
+  SystemConfigDialog,
+  UserManagementDialog,
+  DocumentManagementDialog
+} from "@/components/companies"
 
 export default function CompaniesPage() {
-  // 狀態管理
-  const [showCreateForm, setShowCreateForm] = useState(false)
-  const [editingCompany, setEditingCompany] = useState<Company | null>(null)
-  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
-  const [currentPage, setCurrentPage] = useState(1)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState<boolean | undefined>(
-    undefined
-  )
+  const [companies, setCompanies] = useState<Company[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showLineDialog, setShowLineDialog] = useState(false)
+  const [showSystemConfigDialog, setShowSystemConfigDialog] = useState(false)
+  const [showUserManagementDialog, setShowUserManagementDialog] = useState(false)
+  const [showDocumentDialog, setShowDocumentDialog] = useState(false)
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
+  const router = useRouter()
 
-  // API hooks
-  const companyParams: CompanyListParams = useMemo(() => ({
-    page: currentPage,
-    limit: 20,
-    search: searchQuery || undefined,
-    is_active: statusFilter,
-    sort_by: "created_at",
-    sort_order: "desc",
-  }), [currentPage, searchQuery, statusFilter])
-
-  const {
-    companies,
-    total,
-    loading: companiesLoading,
-    error: companiesError,
-    refresh: refreshCompanies,
-  } = useCompanies(companyParams)
-
-  const {
-    createCompany,
-    updateCompany,
-    deleteCompany,
-    activateCompany,
-    deactivateCompany,
-    loading: operationLoading,
-    error: operationError,
-  } = useCompanyOperations()
-
-  // 處理建立公司
-  const handleCreateCompany = useCallback(
-    async (data: CreateCompanyRequest | UpdateCompanyRequest) => {
-      try {
-        // For create mode, data should be a valid CreateCompanyRequest
-        await createCompany(data as CreateCompanyRequest)
-        setShowCreateForm(false)
-        refreshCompanies()
-      } catch (error) {
-        // 錯誤處理已在 hook 中完成
-        throw error
-      }
-    },
-    [createCompany, refreshCompanies]
-  )
-
-  // 處理更新公司
-  const handleUpdateCompany = useCallback(
-    async (data: CreateCompanyRequest | UpdateCompanyRequest) => {
-      if (!editingCompany) return
-
-      try {
-        // For update mode, data can be partial UpdateCompanyRequest
-        await updateCompany(String(editingCompany.id), data as UpdateCompanyRequest)
-        setEditingCompany(null)
-        refreshCompanies()
-      } catch (error) {
-        throw error
-      }
-    },
-    [editingCompany, updateCompany, refreshCompanies]
-  )
-
-  // 處理公司選擇
-  const handleCompanySelect = useCallback((companyId: string) => {
-    setSelectedCompanies((prev) =>
-      prev.includes(companyId)
-        ? prev.filter((id) => id !== companyId)
-        : [...prev, companyId]
-    )
+  useEffect(() => {
+    loadCompanies()
   }, [])
 
-  // 處理全選
-  const handleCompanySelectAll = useCallback(
-    (selected: boolean) => {
-      setSelectedCompanies(
-        selected ? companies.map((company) => String(company.id)) : []
+  const loadCompanies = async () => {
+    try {
+      setLoading(true)
+      const response = await companiesApi.getList({
+        search: searchTerm || undefined,
+      })
+      
+      // 為每個公司獲取統計數據
+      const companiesWithStats = await Promise.all(
+        response.companies.map(async (company) => {
+          try {
+            const stats = await companiesApi.getStats(company.id)
+            return { ...company, stats }
+          } catch (error) {
+            console.error(`獲取公司 ${company.name} 統計失敗:`, error)
+            return company
+          }
+        })
       )
-    },
-    [companies]
+      
+      setCompanies(companiesWithStats)
+    } catch (error) {
+      console.error("載入公司列表失敗:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleQuickSetup = (company: Company) => {
+    setSelectedCompany(company)
+    setShowLineDialog(true)
+  }
+
+  const handleLineSettings = (company: Company) => {
+    setSelectedCompany(company)
+    setShowLineDialog(true)
+  }
+
+  const handleEdit = (company: Company) => {
+    setSelectedCompany(company)
+    setShowEditDialog(true)
+  }
+
+  const handleToggleActive = async (company: Company) => {
+    try {
+      if (company.is_active) {
+        await companiesApi.deactivate(company.id)
+      } else {
+        await companiesApi.activate(company.id)
+      }
+      await loadCompanies()
+    } catch (error) {
+      console.error("切換公司狀態失敗:", error)
+    }
+  }
+
+  const handleSystemConfig = (company: Company) => {
+    setSelectedCompany(company)
+    setShowSystemConfigDialog(true)
+  }
+
+  const handleUserManagement = (company: Company) => {
+    setSelectedCompany(company)
+    setShowUserManagementDialog(true)
+  }
+
+  const handleDocuments = (company: Company) => {
+    setSelectedCompany(company)
+    setShowDocumentDialog(true)
+  }
+
+  const handleStats = (companyId: number) => {
+    router.push(`/multitenantrag/admin/analytics?company=${companyId}`)
+  }
+
+  const filteredCompanies = companies.filter(
+    (company) =>
+      company.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      company.code.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  // 處理公司檢視
-  const handleCompanyView = useCallback((company: Company) => {
-    // 導航到公司詳情頁面
-    window.location.href = `/multitenantrag/admin/companies/${company.id}`
-  }, [])
-
-  // 處理公司編輯
-  const handleCompanyEdit = useCallback((company: Company) => {
-    setEditingCompany(company)
-  }, [])
-
-  // 處理公司刪除
-  const handleCompanyDelete = useCallback(
-    async (company: Company) => {
-      if (!confirm(`確定要刪除公司 "${company.name}" 嗎？此操作無法復原。`)) {
-        return
-      }
-
-      try {
-        await deleteCompany(String(company.id))
-        refreshCompanies()
-      } catch (error) {
-        console.error("刪除公司失敗:", error)
-      }
-    },
-    [deleteCompany, refreshCompanies]
+  // 統計資料
+  const totalCompanies = companies.length
+  const activeCompanies = companies.filter(
+    (c) => c.is_active && c.line_bot_enabled
+  ).length
+  const totalConversations = companies.reduce(
+    (sum, company) => sum + (company.stats?.total_conversations || 0), 
+    0
+  )
+  const totalDocuments = companies.reduce(
+    (sum, company) => sum + (company.stats?.total_documents || 0), 
+    0
   )
 
-  // 處理公司啟用
-  const handleCompanyActivate = useCallback(
-    async (company: Company) => {
-      try {
-        await activateCompany(String(company.id))
-        refreshCompanies()
-      } catch (error) {
-        console.error("啟用公司失敗:", error)
-      }
-    },
-    [activateCompany, refreshCompanies]
-  )
-
-  // 處理公司停用
-  const handleCompanyDeactivate = useCallback(
-    async (company: Company) => {
-      if (!confirm(`確定要停用公司 "${company.name}" 嗎？`)) {
-        return
-      }
-
-      try {
-        await deactivateCompany(String(company.id))
-        refreshCompanies()
-      } catch (error) {
-        console.error("停用公司失敗:", error)
-      }
-    },
-    [deactivateCompany, refreshCompanies]
-  )
-
-  // 處理公司用戶管理
-  const handleCompanyUsers = useCallback((company: Company) => {
-    window.location.href = `/multitenantrag/admin/companies/${company.id}/users`
-  }, [])
-
-  // 處理公司設定
-  const handleCompanySettings = useCallback((company: Company) => {
-    window.location.href = `/multitenantrag/admin/companies/${company.id}/settings`
-  }, [])
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-lg">載入中...</div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
-      {/* 頁面標題和操作 */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">公司管理</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            管理系統中的所有公司和組織
-          </p>
-        </div>
-
-        <div className="mt-4 sm:mt-0 flex items-center space-x-3">
-          <button
-            onClick={() => refreshCompanies()}
-            disabled={companiesLoading}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-            <RefreshCw
-              className={`h-4 w-4 mr-2 ${
-                companiesLoading ? "animate-spin" : ""
-              }`}
-            />
-            重新整理
-          </button>
-
-          <button className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-            <Download className="h-4 w-4 mr-2" />
-            匯出
-          </button>
-
-          <button className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-            <Upload className="h-4 w-4 mr-2" />
-            匯入
-          </button>
-
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-            <Plus className="h-4 w-4 mr-2" />
-            新增公司
-          </button>
-        </div>
+      {/* 統一管理後台標題 */}
+      <div className="text-center space-y-2">
+        <h1 className="text-4xl font-bold tracking-tight">
+          🏢 多公司 AI 客服統一管理後台
+        </h1>
+        <p className="text-lg text-muted-foreground">
+          設定各公司 LINE Channel 資料即可使用
+        </p>
       </div>
 
-      {/* 統計資訊 */}
+      {/* 總覽儀表板 */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <Building2 className="h-6 w-6 text-gray-400" />
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">
-                    總公司數
-                  </dt>
-                  <dd className="text-lg font-medium text-gray-900">{total}</dd>
-                </dl>
-              </div>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">總公司數</CardTitle>
+            <Settings className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalCompanies} 家</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">活躍公司</CardTitle>
+            <Zap className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              {activeCompanies} 家
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <BarChart3 className="h-6 w-6 text-gray-400" />
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">
-                    啟用中
-                  </dt>
-                  <dd className="text-lg font-medium text-gray-900">
-                    {companies.filter((c) => c.is_active).length}
-                  </dd>
-                </dl>
-              </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">總對話數</CardTitle>
+            <MessageSquare className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">
+              {totalConversations} 次
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <BarChart3 className="h-6 w-6 text-gray-400" />
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">
-                    已停用
-                  </dt>
-                  <dd className="text-lg font-medium text-gray-900">
-                    {companies.filter((c) => !c.is_active).length}
-                  </dd>
-                </dl>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <BarChart3 className="h-6 w-6 text-gray-400" />
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">
-                    本月新增
-                  </dt>
-                  <dd className="text-lg font-medium text-gray-900">
-                    {
-                      companies.filter((c) => {
-                        const createdAt = new Date(c.created_at)
-                        const now = new Date()
-                        return (
-                          createdAt.getMonth() === now.getMonth() &&
-                          createdAt.getFullYear() === now.getFullYear()
-                        )
-                      }).length
-                    }
-                  </dd>
-                </dl>
-              </div>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">總文檔數</CardTitle>
+            <FileText className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600">{totalDocuments} 份</div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* 建立公司表單 */}
-      {showCreateForm && (
-        <div className="bg-white shadow rounded-lg p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-medium text-gray-900">建立新公司</h2>
-            <button
-              onClick={() => setShowCreateForm(false)}
-              className="text-gray-400 hover:text-gray-600">
-              ×
-            </button>
-          </div>
-
-          <CompanyForm
-            onSubmit={handleCreateCompany}
-            onCancel={() => setShowCreateForm(false)}
-            loading={operationLoading}
-          />
+      {/* 快速操作 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <h2 className="text-2xl font-bold">🚀 快速操作</h2>
+          <Button onClick={() => setShowCreateDialog(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            新增公司
+          </Button>
+          <Button variant="outline">
+            <BarChart3 className="mr-2 h-4 w-4" />
+            系統監控
+          </Button>
         </div>
-      )}
-
-      {/* 編輯公司表單 */}
-      {editingCompany && (
-        <div className="bg-white shadow rounded-lg p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-medium text-gray-900">編輯公司資訊</h2>
-            <button
-              onClick={() => setEditingCompany(null)}
-              className="text-gray-400 hover:text-gray-600">
-              ×
-            </button>
-          </div>
-
-          <CompanyForm
-            company={editingCompany}
-            onSubmit={handleUpdateCompany}
-            onCancel={() => setEditingCompany(null)}
-            loading={operationLoading}
-          />
-        </div>
-      )}
-
-      {/* 錯誤訊息 */}
-      {(companiesError || operationError) && (
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <div className="flex">
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">發生錯誤</h3>
-              <div className="mt-2 text-sm text-red-700">
-                {companiesError || operationError}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 公司列表 */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">公司列表</h2>
-        </div>
-
-        <div className="p-6">
-          <CompanyList
-            companies={companies}
-            loading={companiesLoading}
-            selectedCompanies={selectedCompanies}
-            onCompanySelect={handleCompanySelect}
-            onCompanySelectAll={handleCompanySelectAll}
-            onCompanyView={handleCompanyView}
-            onCompanyEdit={handleCompanyEdit}
-            onCompanyDelete={handleCompanyDelete}
-            onCompanyActivate={handleCompanyActivate}
-            onCompanyDeactivate={handleCompanyDeactivate}
-            onCompanyUsers={handleCompanyUsers}
-            onCompanySettings={handleCompanySettings}
+        <div className="w-80">
+          <Input
+            placeholder="搜尋公司名稱或代碼..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
       </div>
 
-      {/* 分頁 */}
-      {total > 20 && (
-        <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 rounded-lg shadow">
-          <div className="flex-1 flex justify-between sm:hidden">
-            <button
-              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-              disabled={currentPage === 1}
-              className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
-              上一頁
-            </button>
-            <button
-              onClick={() => setCurrentPage((prev) => prev + 1)}
-              disabled={currentPage * 20 >= total}
-              className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">
-              下一頁
-            </button>
-          </div>
-          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-gray-700">
-                顯示第{" "}
-                <span className="font-medium">
-                  {(currentPage - 1) * 20 + 1}
-                </span>{" "}
-                到{" "}
-                <span className="font-medium">
-                  {Math.min(currentPage * 20, total)}
-                </span>{" "}
-                項， 共 <span className="font-medium">{total}</span> 項結果
+      {/* 公司卡片列表 */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold">🏢 公司管理</h2>
+        {filteredCompanies.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">沒有找到公司</h3>
+              <p className="text-muted-foreground mb-4">
+                {searchTerm ? "請嘗試其他搜尋關鍵字" : "開始新增第一家公司"}
               </p>
-            </div>
-            <div>
-              <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                <button
-                  onClick={() =>
-                    setCurrentPage((prev) => Math.max(1, prev - 1))
-                  }
-                  disabled={currentPage === 1}
-                  className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50">
-                  上一頁
-                </button>
-                <button
-                  onClick={() => setCurrentPage((prev) => prev + 1)}
-                  disabled={currentPage * 20 >= total}
-                  className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50">
-                  下一頁
-                </button>
-              </nav>
-            </div>
-          </div>
-        </div>
-      )}
+              <Button onClick={() => setShowCreateDialog(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                新增公司
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          filteredCompanies.map((company) => (
+            <CompanyCard
+              key={company.id}
+              company={company}
+              onQuickSetup={handleQuickSetup}
+              onLineSettings={handleLineSettings}
+              onEdit={handleEdit}
+              onToggleActive={handleToggleActive}
+              onSystemConfig={handleSystemConfig}
+              onUserManagement={handleUserManagement}
+              onDocuments={handleDocuments}
+              onStats={handleStats}
+              onRefresh={loadCompanies}
+            />
+          ))
+        )}
+      </div>
+
+      {/* 對話框 */}
+      <CompanyFormDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        onSuccess={loadCompanies}
+      />
+
+      <CompanyFormDialog
+        open={showEditDialog}
+        onOpenChange={setShowEditDialog}
+        company={selectedCompany}
+        onSuccess={loadCompanies}
+      />
+
+      <LineSettingsDialog
+        open={showLineDialog}
+        onOpenChange={setShowLineDialog}
+        company={selectedCompany}
+        onSuccess={loadCompanies}
+      />
+
+      <SystemConfigDialog
+        open={showSystemConfigDialog}
+        onOpenChange={setShowSystemConfigDialog}
+        company={selectedCompany}
+        onSuccess={loadCompanies}
+      />
+
+      <UserManagementDialog
+        open={showUserManagementDialog}
+        onOpenChange={setShowUserManagementDialog}
+        company={selectedCompany}
+        onSuccess={loadCompanies}
+      />
+
+      <DocumentManagementDialog
+        open={showDocumentDialog}
+        onOpenChange={setShowDocumentDialog}
+        company={selectedCompany}
+      />
     </div>
   )
 }

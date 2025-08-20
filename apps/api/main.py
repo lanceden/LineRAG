@@ -3,6 +3,10 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from dotenv import load_dotenv
+
+# 載入環境變數
+load_dotenv("../../.env")
 
 # Core utilities
 from app.core.logging import setup_logging
@@ -11,7 +15,7 @@ from app.core.middleware import PermissionMiddleware
 
 # Services (initialize on startup)
 from app.services.multitenant_rag import get_multitenant_rag_service
-from app.services.rag_anything import get_rag_service
+from app.services.ocr_rag_service import get_ocr_rag_service
 
 # Routers
 from app.routers.health import router as health_router
@@ -48,20 +52,20 @@ async def lifespan(app: FastAPI):
     multitenant_rag_service = get_multitenant_rag_service()
     logger.info("✅ Multi-Tenant RAG service initialized successfully")
 
-    # Initialize RAG-Anything service
+    # Initialize OCR RAG service
     try:
-        rag_service = get_rag_service()
+        ocr_rag_service = get_ocr_rag_service()
         logger.info(
-            "📦 RAG-Anything service instance created, attempting initialization..."
+            "OCR RAG service instance created, attempting initialization..."
         )
-        await rag_service.initialize()
-        logger.info("✅ RAG-Anything service initialized successfully")
+        await ocr_rag_service.initialize()
+        logger.info("OCR RAG service initialized successfully")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize RAG-Anything service: {e}")
-        logger.error(f"❌ Error type: {type(e).__name__}")
+        logger.error(f"Failed to initialize OCR RAG service: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
         import traceback
 
-        logger.error(f"❌ Full traceback: {traceback.format_exc()}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         # Continue anyway, service will be initialized on first use
 
     yield

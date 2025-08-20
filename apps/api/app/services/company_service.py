@@ -179,9 +179,10 @@ class CompanyService:
 
     @staticmethod
     def deactivate_company(db: Session, company_id: int) -> Company:
-        """停用公司"""
+        """停用公司 - 同時停用 LINE Bot 但保留設定資料"""
         company = CompanyService.get_company(db, company_id)
         company.is_active = False
+        company.line_bot_enabled = False  # 停用 LINE Bot 但保留 channel 資料
         company.updated_at = datetime.utcnow()
 
         db.commit()

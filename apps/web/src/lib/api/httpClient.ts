@@ -28,12 +28,13 @@ class HttpClient {
    */
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    skipContentType = false
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`
-    
+
     // 獲取認證頭
-    const headers = await this.getAuthHeaders(options.headers)
+    const headers = await this.getAuthHeaders(options.headers, skipContentType)
 
     try {
       const response = await fetch(url, {
@@ -87,9 +88,12 @@ class HttpClient {
   /**
    * 獲取認證頭
    */
-  private async getAuthHeaders(customHeaders?: HeadersInit): Promise<Record<string, string>> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+  private async getAuthHeaders(customHeaders?: HeadersInit, skipContentType = false): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {}
+
+    // 只在不跳過時設置 Content-Type
+    if (!skipContentType) {
+      headers['Content-Type'] = 'application/json'
     }
 
     // 添加自定義頭
@@ -117,11 +121,11 @@ class HttpClient {
     if (typeof window === 'undefined') return
 
     const currentPath = window.location.pathname
-    
+
     if (!currentPath.includes('/auth/login')) {
       // 保存當前路徑用於登入後重定向
       sessionStorage.setItem('redirectAfterLogin', currentPath)
-      
+
       // 使用動態導入避免服務端執行
       import('next-auth/react').then(async ({ signOut }) => {
         try {
@@ -156,7 +160,7 @@ class HttpClient {
       }
     }
 
-    return this.request<T>(url, { method: 'GET' })
+    return this.request<T>(url, { method: 'GET' }, true) // GET 請求不需要 Content-Type
   }
 
   async post<T>(endpoint: string, data?: unknown): Promise<T> {
@@ -165,9 +169,9 @@ class HttpClient {
     }
 
     if (data instanceof FormData) {
-      // FormData 不需要設定 Content-Type
+      // FormData 不需要設定 Content-Type，讓瀏覽器自動設定
       options.body = data
-      options.headers = {} // 讓瀏覽器自動設定
+      return this.request<T>(endpoint, options, true) // 跳過 Content-Type 設定
     } else if (data) {
       options.body = JSON.stringify(data)
     }
@@ -183,7 +187,7 @@ class HttpClient {
   }
 
   async delete<T>(endpoint: string): Promise<T> {
-    return this.request<T>(endpoint, { method: 'DELETE' })
+    return this.request<T>(endpoint, { method: 'DELETE' }, true) // DELETE 請求不需要 Content-Type
   }
 }
 

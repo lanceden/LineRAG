@@ -6,6 +6,10 @@
 import asyncio
 import os
 from typing import List
+from dotenv import load_dotenv
+
+# 載入環境變數
+load_dotenv("../../.env")
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, create_tables
 from app.models.company import Company

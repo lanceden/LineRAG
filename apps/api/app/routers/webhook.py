@@ -2,6 +2,8 @@ import hmac
 import hashlib
 import base64
 import os
+import logging
+from pathlib import Path
 from fastapi import APIRouter, Request, HTTPException, Depends
 import httpx
 from dotenv import load_dotenv
@@ -10,9 +12,14 @@ from sqlalchemy.orm import Session
 from app.schemas.ask import Message
 from app.services.multitenant_rag import get_multitenant_rag_service
 from app.services.multitenant_user import get_multitenant_user_service
+from app.services.company_service import CompanyService
+from app.models.company import Company
 from app.core.database import get_db
 
 load_dotenv()
+
+# 設定日誌
+logger = logging.getLogger("webhook")
 
 # 定義 API 路由，前綴為空，標籤為 "webhook"
 router = APIRouter(prefix="", tags=["webhook"])
@@ -23,19 +30,19 @@ LINE_REPLY_ENDPOINT = os.getenv(
 )
 
 
-def verify_line_signature(body: bytes, x_line_signature: str | None) -> bool:
+def verify_line_signature_for_company(
+    body: bytes, x_line_signature: str | None, channel_secret: str
+) -> bool:
     """
-    驗證來自 LINE 的請求簽名。
-    使用 LINE Channel Secret 計算 HMAC-SHA256 簽名，並與請求頭中的簽名進行比較。
-    如果未配置 LINE Channel Secret，則跳過驗證（用於開發環境）。
+    驗證來自 LINE 的請求簽名（使用指定公司的 Channel Secret）。
+    使用指定的 Channel Secret 計算 HMAC-SHA256 簽名，並與請求頭中的簽名進行比較。
     """
-    secret = os.getenv("LINE_CHANNEL_SECRET")
-    if not secret:
-        # 如果沒有配置 secret，則跳過驗證（開發環境）
-        return True
-    mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
+    if not channel_secret or not x_line_signature:
+        return False
+
+    mac = hmac.new(channel_secret.encode("utf-8"), body, hashlib.sha256).digest()
     expected = base64.b64encode(mac).decode("utf-8")
-    return hmac.compare_digest(expected, x_line_signature or "")
+    return hmac.compare_digest(expected, x_line_signature)
 
 
 @router.post("/webhook")
@@ -44,17 +51,29 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
     處理來自 LINE 的 Webhook 事件（多租戶版本）。
     根據 Channel Token 識別公司，使用該公司的 RAG 服務處理訊息。
     """
+    logger.info("🔔 收到 LINE Webhook 請求")
+
     raw_body = await request.body()
     signature = request.headers.get("x-line-signature")
-    
-    body = await request.json()
-    events = body.get("events", [])
+
+    logger.info(f"📝 請求簽名: {signature[:20] if signature else 'None'}...")
+    logger.info(f"📦 請求體大小: {len(raw_body)} bytes")
+
+    try:
+        body = await request.json()
+        events = body.get("events", [])
+        logger.info(f"🎯 收到 {len(events)} 個事件")
+    except Exception as e:
+        logger.error(f"❌ 解析請求體失敗: {e}")
+        return "error"
 
     # 取得多租戶服務
     multitenant_rag_service = get_multitenant_rag_service()
     user_service = get_multitenant_user_service(db)
 
-    for event in events:
+    for i, event in enumerate(events):
+        logger.info(f"🔄 處理事件 {i+1}/{len(events)}: {event.get('type', 'unknown')}")
+
         if (
             event.get("type") == "message"
             and event.get("message", {}).get("type") == "text"
@@ -63,25 +82,42 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
             reply_token = event["replyToken"]
             line_user_id = event["source"]["userId"]
 
+            logger.info(f"💬 收到文字訊息: '{user_text}' from {line_user_id}")
+            logger.info(f"🎫 Reply Token: {reply_token}")
+
             try:
-                # 根據請求頭中的 Channel Token 或從資料庫查找對應公司
-                # 這裡需要實作根據 webhook 識別公司的邏輯
-                # 暫時使用環境變數作為備用
-                line_access_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-                
-                if not line_access_token:
-                    continue  # 如果 LINE token 未配置，則跳過
+                # 遍歷所有公司，找出哪個的 Channel Secret 可以驗證這個請求
+                companies = (
+                    db.query(Company)
+                    .filter(
+                        Company.is_active == True,
+                        Company.line_bot_enabled == True,
+                        Company.line_channel_secret.isnot(None),
+                    )
+                    .all()
+                )
 
-                # 驗證簽名（根據公司的 Channel Secret）
-                if not verify_line_signature(raw_body, signature):
-                    raise HTTPException(status_code=401, detail="Invalid LINE signature")
+                logger.info(f"🏢 找到 {len(companies)} 家啟用 LINE Bot 的公司")
 
-                # TODO: 實作根據 Channel Token 找到公司的邏輯
-                # company = await multitenant_rag_service.get_company_by_line_channel(line_access_token, db)
-                
-                # 暫時使用預設公司 ID
-                company_id = 1  # 這應該從上面的邏輯取得
-                
+                company = None
+                for candidate in companies:
+                    logger.info(f"🔍 檢查公司: {candidate.name} (ID: {candidate.id})")
+                    if verify_line_signature_for_company(
+                        raw_body, signature, candidate.line_channel_secret
+                    ):
+                        company = candidate
+                        logger.info(f"✅ 簽名驗證成功，匹配公司: {company.name}")
+                        break
+                    else:
+                        logger.info(f"❌ 簽名驗證失敗: {candidate.name}")
+
+                if not company:
+                    logger.warning("⚠️ 找不到匹配的公司或簽名驗證失敗，跳過此事件")
+                    continue  # 找不到匹配的公司或簽名驗證失敗
+
+                company_id = company.id
+                line_access_token = company.line_channel_token
+
                 # 取得或建立用戶
                 user = await user_service.get_user_by_line_id(line_user_id, company_id)
                 if not user:
@@ -90,14 +126,59 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                         company_id=company_id,
                         line_id=line_user_id,
                         name=f"LINE用戶_{line_user_id[-6:]}",
-                        role="user"
+                        role="user",
                     )
 
                 # 取得該公司的 RAG 服務
-                company_rag_service = await multitenant_rag_service.get_company_rag_service(company_id, db)
-                
+                logger.info(f"🤖 取得公司 {company.name} 的 RAG 服務")
+                company_rag_service = (
+                    await multitenant_rag_service.get_company_rag_service(
+                        company_id, db
+                    )
+                )
+
                 # 使用公司的 RAG 服務生成答案
-                answer = await company_rag_service.ask(user_text)
+                logger.info(f"🔍 開始處理問題: '{user_text}'")
+
+                # 添加調試：檢查 RAG 系統狀態
+                try:
+                    # 檢查 RAG 系統是否已初始化
+                    logger.info(
+                        f"🔧 RAG 系統初始化狀態: {company_rag_service.initialized}"
+                    )
+
+                    # 檢查公司專用工作目錄
+                    if (
+                        hasattr(company_rag_service, "company_working_dir")
+                        and company_rag_service.company_working_dir
+                    ):
+                        working_dir = company_rag_service.company_working_dir
+                        logger.info(f"📁 公司專用工作目錄: {working_dir}")
+                    else:
+                        working_dir = os.getenv("RAG_WORKING_DIR", "./rag_storage")
+                        logger.info(f"📁 預設工作目錄: {working_dir}")
+
+                    # 檢查目錄是否存在及內容
+                    if os.path.exists(working_dir):
+                        files = list(Path(working_dir).rglob("*"))
+                        logger.info(f"📂 工作目錄檔案數量: {len(files)}")
+                        if files:
+                            logger.info(f"📄 部分檔案: {[f.name for f in files[:5]]}")
+                    else:
+                        logger.warning(f"⚠️ 工作目錄不存在: {working_dir}")
+
+                    # 檢查公司 ID
+                    if hasattr(company_rag_service, "company_id"):
+                        logger.info(
+                            f"🏢 RAG 服務公司 ID: {company_rag_service.company_id}"
+                        )
+
+                except Exception as e:
+                    logger.warning(f"⚠️ RAG 系統狀態檢查失敗: {e}")
+
+                # 使用 OCR RAG 查詢，傳遞 company_id 確保多租戶隔離
+                answer = await company_rag_service.query(user_text, company_id=str(company_id))
+                logger.info(f"💡 生成答案: '{answer[:100]}...' (長度: {len(answer)})")
 
                 # 記錄審計日誌
                 await user_service.log_audit(
@@ -106,10 +187,11 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                     action="line_message_processed",
                     resource_type="message",
                     resource_id=reply_token,
-                    status="success"
+                    status="success",
                 )
 
                 # 回覆訊息
+                logger.info(f"📤 準備回覆訊息給 LINE 用戶")
                 headers = {
                     "Authorization": f"Bearer {line_access_token}",
                     "Content-Type": "application/json",
@@ -118,20 +200,32 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                     "replyToken": reply_token,
                     "messages": [{"type": "text", "text": answer}],
                 }
-                
+
                 async with httpx.AsyncClient() as client:
-                    await client.post(LINE_REPLY_ENDPOINT, headers=headers, json=payload)
+                    response = await client.post(
+                        LINE_REPLY_ENDPOINT, headers=headers, json=payload
+                    )
+                    if response.status_code == 200:
+                        logger.info("✅ 成功回覆 LINE 訊息")
+                    else:
+                        logger.error(
+                            f"❌ LINE 回覆失敗: {response.status_code} - {response.text}"
+                        )
 
             except Exception as e:
+                logger.error(f"💥 處理 LINE 訊息時發生錯誤: {e}")
                 # 記錄錯誤日誌
                 await user_service.log_audit(
-                    company_id=company_id if 'company_id' in locals() else None,
+                    company_id=company_id if "company_id" in locals() else None,
                     action="line_message_error",
                     resource_type="message",
                     resource_id=reply_token,
                     status="error",
-                    error_message=str(e)
+                    error_message=str(e),
                 )
                 continue
+        else:
+            logger.info(f"⏭️ 跳過非文字訊息事件: {event.get('type', 'unknown')}")
 
+    logger.info("🏁 Webhook 處理完成")
     return "ok"

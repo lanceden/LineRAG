@@ -4,6 +4,7 @@ Neo4j 知識圖譜服務
 """
 
 import os
+import json
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from neo4j import GraphDatabase, AsyncGraphDatabase
@@ -95,12 +96,16 @@ class Neo4jService:
             await self.initialize()
 
         async with self.driver.session() as session:
+            # 將 properties 轉換為 JSON 字串，避免 Neo4j Map 類型錯誤
+            properties = entity_data.get("properties", {})
+            properties_json = json.dumps(properties) if properties else ""
+
             query = """
             MERGE (e:Entity {id: $entity_id, company_id: $company_id})
             SET e.name = $name,
                 e.type = $type,
                 e.description = $description,
-                e.properties = $properties,
+                e.properties_json = $properties_json,
                 e.created_at = datetime(),
                 e.updated_at = datetime()
             RETURN e.id as entity_id
@@ -114,7 +119,7 @@ class Neo4jService:
                     "name": entity_data.get("name"),
                     "type": entity_data.get("type"),
                     "description": entity_data.get("description", ""),
-                    "properties": entity_data.get("properties", {}),
+                    "properties_json": properties_json,
                 },
             )
 
@@ -134,11 +139,15 @@ class Neo4jService:
             await self.initialize()
 
         async with self.driver.session() as session:
+            # 將 properties 轉換為 JSON 字串，避免 Neo4j Map 類型錯誤
+            props = properties or {}
+            properties_json = json.dumps(props) if props else ""
+
             query = """
             MATCH (source:Entity {id: $source_id, company_id: $company_id})
             MATCH (target:Entity {id: $target_id, company_id: $company_id})
             MERGE (source)-[r:RELATES_TO {type: $rel_type}]->(target)
-            SET r.properties = $properties,
+            SET r.properties_json = $properties_json,
                 r.created_at = datetime(),
                 r.updated_at = datetime()
             RETURN r
@@ -151,7 +160,7 @@ class Neo4jService:
                     "target_id": target_id,
                     "company_id": company_id,
                     "rel_type": relationship_type,
-                    "properties": properties or {},
+                    "properties_json": properties_json,
                 },
             )
 
@@ -165,13 +174,17 @@ class Neo4jService:
             await self.initialize()
 
         async with self.driver.session() as session:
+            # 將 metadata 轉換為 JSON 字串，避免 Neo4j Map 類型錯誤
+            metadata = document_data.get("metadata", {})
+            metadata_json = json.dumps(metadata) if metadata else ""
+
             query = """
             MERGE (d:Document {id: $doc_id, company_id: $company_id})
             SET d.filename = $filename,
                 d.file_path = $file_path,
                 d.file_type = $file_type,
                 d.file_size = $file_size,
-                d.metadata = $metadata,
+                d.metadata_json = $metadata_json,
                 d.created_at = datetime(),
                 d.updated_at = datetime()
             RETURN d.id as document_id
@@ -186,7 +199,7 @@ class Neo4jService:
                     "file_path": document_data.get("file_path"),
                     "file_type": document_data.get("file_type"),
                     "file_size": document_data.get("file_size", 0),
-                    "metadata": document_data.get("metadata", {}),
+                    "metadata_json": metadata_json,
                 },
             )
 
@@ -296,11 +309,11 @@ class Neo4jService:
             query = f"""
             MATCH (e:Entity)
             WHERE {" AND ".join(where_conditions)}
-            RETURN e.id as id, 
-                   e.name as name, 
+            RETURN e.id as id,
+                   e.name as name,
                    e.type as type,
                    e.description as description,
-                   e.properties as properties
+                   e.properties_json as properties_json
             ORDER BY e.name
             LIMIT $limit
             """
@@ -309,13 +322,20 @@ class Neo4jService:
 
             entities = []
             async for record in result:
+                # 將 JSON 字串轉回字典
+                properties_json = record["properties_json"] or "{}"
+                try:
+                    properties = json.loads(properties_json)
+                except (json.JSONDecodeError, TypeError):
+                    properties = {}
+
                 entities.append(
                     {
                         "id": record["id"],
                         "name": record["name"],
                         "type": record["type"],
                         "description": record["description"],
-                        "properties": record["properties"],
+                        "properties": properties,
                     }
                 )
 

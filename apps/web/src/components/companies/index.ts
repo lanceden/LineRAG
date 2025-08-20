@@ -2,11 +2,13 @@
  * 公司管理組件導出
  */
 
-// 主要組件
-export { CompanyList } from './CompanyList'
-export { CompanyForm } from './CompanyForm'
-export { CompanyStatsCard } from './CompanyStatsCard'
-export { CompanyUserManagement } from './CompanyUserManagement'
+// 新的統一管理後台組件
+export { CompanyCard } from './CompanyCard'
+export { CompanyFormDialog } from './CompanyFormDialog'
+export { LineSettingsDialog } from './LineSettingsDialog'
+export { SystemConfigDialog } from './SystemConfigDialog'
+export { UserManagementDialog } from './UserManagementDialog'
+export { DocumentManagementDialog } from './DocumentManagementDialog'
 
 // 類型導出
 export type {
