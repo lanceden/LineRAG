@@ -28,3 +28,6 @@ apps/api/pdfs/
 apps/web/.next/
 # Python compiled files
 *.pyc
+
+output
+rag_storage

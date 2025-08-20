@@ -19,9 +19,6 @@ qdrant-client
 # Graph database (Neo4j for Knowledge Graph)
 neo4j
 
-# LightRAG 外部存儲支援
-lightrag-hku[neo4j,qdrant]
-
 # OpenAI API integration
 openai
 

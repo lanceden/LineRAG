@@ -13,12 +13,12 @@ from .rag_config import RAGConfig
 
 class KnowledgeGraphManager:
     """知識圖譜管理器"""
-    
-    def __init__(self, rag_instance, config: RAGConfig):
-        self.rag_instance = rag_instance
+
+    def __init__(self, rag_service, config: RAGConfig):
+        self.rag_service = rag_service  # 持有 RAG 服務引用而不是實例
         self.config = config
         self.neo4j_service = None
-    
+
     async def initialize(self):
         """初始化 Neo4j 服務"""
         if not self.neo4j_service:
@@ -444,7 +444,9 @@ class KnowledgeGraphManager:
                     print(f"LLM relationship extraction failed: {e}")
 
             # 基於規則的關係提取（備用方案）
-            relationships.extend(self._create_rule_based_relationships(entities, company_id))
+            relationships.extend(
+                self._create_rule_based_relationships(entities, company_id)
+            )
 
             return relationships
 

@@ -13,8 +13,8 @@ from app.utils.data_validator import verify_query_data_exists
 class QueryHandler:
     """查詢處理器"""
     
-    def __init__(self, rag_instance, config: RAGConfig, db_manager: DatabaseManager):
-        self.rag_instance = rag_instance
+    def __init__(self, rag_service, config: RAGConfig, db_manager: DatabaseManager):
+        self.rag_service = rag_service  # 使用服務引用而不是實例
         self.config = config
         self.db_manager = db_manager
         self.api_call_count = 0
