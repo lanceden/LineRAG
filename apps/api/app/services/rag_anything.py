@@ -38,6 +38,9 @@ class RAGAnythingService:
         # RAG 實例
         self.rag_instance = None
 
+        # 實例緩存 - 避免重複創建
+        self.rag_instance_cache = {}
+
         # 功能模組
         self.document_processor = None
         self.query_handler = None
@@ -318,8 +321,14 @@ class RAGAnythingService:
         return rag_instance
 
     async def get_rag_instance_for_company(self, company_id: str):
-        """為特定公司動態創建 RAG-Anything 實例（在正確的命名空間下）"""
-        print(f"🔄 為公司 {company_id} 創建 RAG-Anything 實例...")
+        """為特定公司動態創建 RAG-Anything 實例（帶緩存）"""
+
+        # 檢查緩存
+        if company_id in self.rag_instance_cache:
+            print(f"📦 使用緩存的 RAG 實例 (公司 {company_id})")
+            return self.rag_instance_cache[company_id]
+
+        print(f"🔄 為公司 {company_id} 創建新的 RAG-Anything 實例...")
 
         # 更新配置
         original_company_id = self.config.company_id
@@ -334,9 +343,12 @@ class RAGAnythingService:
             self.config.ensure_working_dir()
 
             # 在正確的命名空間下創建 RAG-Anything 實例
-            rag_instance = await self._create_rag_instance_direct()
+            rag_instance = await self._create_rag_instance_for_query()
 
-            print(f"✅ 公司 {company_id} 的 RAG-Anything 實例創建成功")
+            # 緩存實例
+            self.rag_instance_cache[company_id] = rag_instance
+            print(f"✅ 公司 {company_id} 的 RAG-Anything 實例創建並緩存成功")
+
             return rag_instance
 
         except Exception as e:
@@ -345,6 +357,196 @@ class RAGAnythingService:
         finally:
             # 恢復原始配置
             self.config.company_id = original_company_id
+
+    async def _create_rag_instance_for_query(self):
+        """專門為查詢創建 RAG-Anything 實例（基於已存在的 LightRAG 數據）"""
+        print("🔄 創建查詢專用 RAG-Anything 實例...")
+
+        from raganything import RAGAnything
+        from lightrag import LightRAG
+
+        # 獲取配置
+        llm_config = self.config.get_llm_config()
+        embedding_config = self.config.get_embedding_config()
+        vision_config = self.config.get_vision_model_config()
+        rerank_config = self.config.get_rerank_config()
+
+        print(f"🔧 RAG-Anything 工作目錄: {self.config.working_dir}")
+
+        # 定義 LLM 模型函數
+        def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
+            return openai_complete_if_cache(
+                llm_config["model"],
+                prompt,
+                system_prompt=system_prompt,
+                history_messages=history_messages,
+                api_key=llm_config["api_key"],
+                base_url=llm_config["base_url"],
+                **kwargs,
+            )
+
+        # 定義嵌入函數
+        embedding_func = EmbeddingFunc(
+            embedding_dim=embedding_config["embedding_dim"],
+            max_token_size=embedding_config["max_token_size"],
+            func=lambda texts: openai_embed(
+                texts,
+                model=embedding_config["model"],
+                api_key=embedding_config["api_key"],
+                base_url=embedding_config["base_url"],
+            ),
+        )
+
+        # 定義重排序函數（基於 LightRAG 文檔的推薦方式）
+        async def rerank_model_func(
+            query: str, documents: list, top_n: int = None, **kwargs
+        ):
+            """自定義重排序函數，使用 OpenAI 相容的 API"""
+            from lightrag.llm.openai import openai_complete_if_cache
+
+            # 如果沒有文檔，直接返回
+            if not documents:
+                return documents
+
+            # 使用 LLM 進行重排序（簡化版本）
+            try:
+                # 構建重排序提示
+                doc_texts = []
+                for i, doc in enumerate(documents):
+                    if isinstance(doc, dict):
+                        content = doc.get("content", str(doc))
+                    else:
+                        content = str(doc)
+                    doc_texts.append(f"{i}: {content[:200]}...")
+
+                prompt = f"""
+請根據查詢的相關性對以下文檔進行重新排序（0到{len(documents)-1}）：
+
+查詢: {query}
+
+文檔:
+{chr(10).join(doc_texts)}
+
+請按相關性從高到低返回文檔編號，用逗號分隔（例如：2,0,1）：
+"""
+
+                response = await openai_complete_if_cache(
+                    (
+                        rerank_config["model"]
+                        if "model" in rerank_config
+                        else llm_config["model"]
+                    ),
+                    prompt,
+                    api_key=rerank_config["api_key"],
+                    base_url=rerank_config["base_url"],
+                    temperature=0.1,
+                )
+
+                # 解析重排序結果
+                try:
+                    indices = [int(x.strip()) for x in response.strip().split(",")]
+                    # 限制結果數量
+                    target_top_n = top_n or rerank_config.get("top_n", 10)
+                    indices = indices[:target_top_n]
+
+                    # 重新排序文檔
+                    reranked_docs = []
+                    for idx in indices:
+                        if 0 <= idx < len(documents):
+                            doc = documents[idx]
+                            if isinstance(doc, dict):
+                                doc["rerank_score"] = 1.0 - (len(reranked_docs) * 0.1)
+                            reranked_docs.append(doc)
+
+                    print(f"🔄 重排序完成：{len(reranked_docs)} 個文檔")
+                    return reranked_docs
+                except (ValueError, IndexError):
+                    # 如果解析失敗，返回原始文檔的前 top_n 個
+                    target_top_n = top_n or rerank_config.get("top_n", 10)
+                    return documents[:target_top_n]
+
+            except Exception as e:
+                print(f"⚠️ 重排序失敗，使用原始順序: {e}")
+                target_top_n = top_n or rerank_config.get("top_n", 10)
+                return documents[:target_top_n]
+
+        # 創建 LightRAG 實例（加載已存在的數據）
+        lightrag_instance = LightRAG(
+            working_dir=self.config.working_dir,
+            llm_model_func=llm_model_func,
+            embedding_func=embedding_func,
+            rerank_model_func=rerank_model_func,  # 添加重排序函數
+        )
+
+        # 初始化存儲（加載已存在的數據）
+        await lightrag_instance.initialize_storages()
+
+        # 定義視覺模型函數
+        def vision_model_func(
+            prompt,
+            system_prompt=None,
+            history_messages=[],
+            image_data=None,
+            messages=None,
+            **kwargs,
+        ):
+            if messages:
+                return openai_complete_if_cache(
+                    vision_config["model"],
+                    "",
+                    system_prompt=None,
+                    history_messages=[],
+                    messages=messages,
+                    api_key=vision_config["api_key"],
+                    base_url=vision_config["base_url"],
+                    **kwargs,
+                )
+            elif image_data:
+                return openai_complete_if_cache(
+                    vision_config["model"],
+                    "",
+                    system_prompt=None,
+                    history_messages=[],
+                    messages=[
+                        (
+                            {"role": "system", "content": system_prompt}
+                            if system_prompt
+                            else None
+                        ),
+                        (
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/jpeg;base64,{image_data}"
+                                        },
+                                    },
+                                ],
+                            }
+                            if image_data
+                            else {"role": "user", "content": prompt}
+                        ),
+                    ],
+                    api_key=vision_config["api_key"],
+                    base_url=vision_config["base_url"],
+                    **kwargs,
+                )
+            else:
+                return lightrag_instance.llm_model_func(
+                    prompt, system_prompt, history_messages, **kwargs
+                )
+
+        # 使用已存在的 LightRAG 實例創建 RAG-Anything（現在包含重排序功能）
+        rag_instance = RAGAnything(
+            lightrag=lightrag_instance,
+            vision_model_func=vision_model_func,
+        )
+
+        print("✅ 查詢專用 RAG-Anything 實例創建完成（包含重排序功能）")
+        return rag_instance
 
     async def _create_rag_instance_direct(self):
         """直接創建 RAG-Anything 實例（不依賴 lightrag_instance 參數）"""

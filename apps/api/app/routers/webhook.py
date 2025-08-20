@@ -88,19 +88,28 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
     """
     logger.info("🔔 收到 LINE Webhook 請求")
 
-    raw_body = await request.body()
-    signature = request.headers.get("x-line-signature")
-
-    logger.info(f"📝 請求簽名: {signature[:20] if signature else 'None'}...")
-    logger.info(f"📦 請求體大小: {len(raw_body)} bytes")
-
     try:
-        body = await request.json()
-        events = body.get("events", [])
-        logger.info(f"🎯 收到 {len(events)} 個事件")
+        raw_body = await request.body()
+        signature = request.headers.get("x-line-signature")
+
+        logger.info(f"📝 請求簽名: {signature[:20] if signature else 'None'}...")
+        logger.info(f"📦 請求體大小: {len(raw_body)} bytes")
+
+        try:
+            body = await request.json()
+            events = body.get("events", [])
+            logger.info(f"🎯 收到 {len(events)} 個事件")
+        except Exception as e:
+            logger.error(f"❌ 解析請求體失敗: {e}")
+            return "error"
+
     except Exception as e:
-        logger.error(f"❌ 解析請求體失敗: {e}")
-        return "error"
+        if "ClientDisconnect" in str(e):
+            logger.warning(f"⚠️ 客戶端斷開連接: {e}")
+            return "client_disconnected"
+        else:
+            logger.error(f"❌ 讀取請求體失敗: {e}")
+            return "error"
 
     # 取得多租戶服務
     multitenant_rag_service = get_multitenant_rag_service()

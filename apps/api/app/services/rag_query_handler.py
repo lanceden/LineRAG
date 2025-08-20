@@ -12,7 +12,7 @@ from app.utils.data_validator import verify_query_data_exists
 
 class QueryHandler:
     """查詢處理器"""
-    
+
     def __init__(self, rag_service, config: RAGConfig, db_manager: DatabaseManager):
         self.rag_service = rag_service  # 使用服務引用而不是實例
         self.config = config
@@ -32,32 +32,37 @@ class QueryHandler:
         print("=" * 80)
 
         try:
-            # 使用異步命名空間上下文管理器
+            # 直接處理查詢，不使用異步上下文管理器
             if company_id:
-                async with AsyncNamespaceContext(int(company_id)) as company_workspace:
-                    print(f"🏷️  查詢命名空間: {company_workspace}")
-                    
-                    # 查詢前驗證數據存在
-                    data_exists = await verify_query_data_exists(int(company_id))
-                    if not data_exists:
-                        raise ValueError(f"No data found for company {company_id}")
-                    
-                    # 查詢前檢查數據庫狀態
-                    await self._check_database_status_before_query(query, company_id)
+                # 查詢前驗證數據存在
+                data_exists = await verify_query_data_exists(int(company_id))
+                if not data_exists:
+                    raise ValueError(f"No data found for company {company_id}")
 
-                    print(f"🚀 執行 RAG 查詢...")
-                    result = await self.rag_instance.aquery(query, mode=mode)
+                # 動態獲取當前公司的 RAG-Anything 實例
+                print(f"🔧 為公司 {company_id} 動態創建 RAG-Anything 實例...")
+                rag_instance = await self.rag_service.get_rag_instance_for_company(
+                    str(company_id)
+                )
 
-                    print(f"✅ RAG 查詢完成")
-                    print(f"   結果長度: {len(result)} 字符")
-                    print(f"   結果預覽: {result[:100]}...")
-                    print("=" * 80)
+                print(f"🚀 執行 RAG 查詢...")
+                # 啟用重排序功能以提升結果質量
+                result = await rag_instance.aquery(query, mode=mode)
 
-                    return result
+                print(f"✅ RAG 查詢完成")
+                print(f"   結果長度: {len(result)} 字符")
+                print(f"   結果預覽: {result[:100]}...")
+                print("=" * 80)
+
+                return result
             else:
-                # 沒有指定公司ID的查詢
+                # 沒有指定公司ID的查詢 - 使用默認實例
                 print(f"🚀 執行 RAG 查詢 (無公司限制)...")
-                result = await self.rag_instance.aquery(query, mode=mode)
+                rag_instance = await self.rag_service.get_rag_instance_for_company(
+                    "default"
+                )
+                # 啟用重排序功能以提升結果質量
+                result = await rag_instance.aquery(query, mode=mode)
                 print(f"✅ RAG 查詢完成")
                 return result
 
@@ -67,7 +72,11 @@ class QueryHandler:
             raise Exception(f"Query failed: {str(e)}")
 
     async def query_multimodal(
-        self, query: str, multimodal_content: List[Dict], mode: str = "hybrid", company_id: str = None
+        self,
+        query: str,
+        multimodal_content: List[Dict],
+        mode: str = "hybrid",
+        company_id: str = None,
     ) -> str:
         """多模態查詢"""
         print("=" * 80)
@@ -79,29 +88,36 @@ class QueryHandler:
         print("=" * 80)
 
         try:
-            # 設定公司命名空間
+            # 查詢前檢查數據庫狀態
+            await self._check_database_status_before_query(query, company_id)
+
+            # 動態創建或獲取 RAG 實例
             if company_id:
-                company_workspace = self.config.set_company_namespace(company_id)
-                print(f"🏷️  查詢命名空間: {company_workspace}")
-            
-            try:
-                # 查詢前檢查數據庫狀態
-                await self._check_database_status_before_query(query, company_id)
+                # 為特定公司創建 RAG 實例
+                rag_instance = await self.rag_service.get_rag_instance_for_company(
+                    str(company_id)
+                )
 
                 print(f"🚀 執行多模態 RAG 查詢...")
-                result = await self.rag_instance.aquery_with_multimodal(
+                # 啟用重排序功能以提升結果質量
+                result = await rag_instance.aquery_with_multimodal(
+                    query=query, multimodal_content=multimodal_content, mode=mode
+                )
+            else:
+                # 沒有指定公司ID的查詢
+                rag_instance = await self.rag_service.get_rag_instance_for_company(
+                    "default"
+                )
+                print(f"🚀 執行多模態 RAG 查詢 (無公司限制)...")
+                result = await rag_instance.aquery_with_multimodal(
                     query=query, multimodal_content=multimodal_content, mode=mode
                 )
 
-                print(f"✅ 多模態 RAG 查詢完成")
-                print(f"   結果長度: {len(result)} 字符")
-                print("=" * 80)
+            print(f"✅ 多模態 RAG 查詢完成")
+            print(f"   結果長度: {len(result)} 字符")
+            print("=" * 80)
 
-                return result
-                
-            finally:
-                if company_id:
-                    self.config.restore_namespace()
+            return result
 
         except Exception as e:
             print(f"❌ 多模態 RAG 查詢失敗: {str(e)}")
@@ -119,7 +135,7 @@ class QueryHandler:
         """完整的 OpenAI API 調用（包含錯誤處理和重試）"""
         if history_messages is None:
             history_messages = []
-            
+
         max_retries = 3
         retry_count = 0
 
@@ -188,14 +204,16 @@ class QueryHandler:
             ),
         }
 
-    async def _check_database_status_before_query(self, query: str, company_id: str = None):
+    async def _check_database_status_before_query(
+        self, query: str, company_id: str = None
+    ):
         """查詢前檢查數據庫狀態"""
         print(f"🔍 查詢前檢查數據庫狀態...")
-        
+
         if company_id:
             # 檢查特定公司的數據狀態
             status = await self.db_manager.check_company_data_status(company_id)
-            
+
             # 檢查 Qdrant 數據
             qdrant_status = status.get("qdrant", {})
             if qdrant_status.get("status") == "success":
@@ -204,8 +222,10 @@ class QueryHandler:
                 if total_points == 0:
                     print(f"   ⚠️  警告: 命名空間中沒有向量數據，可能導致查詢無結果")
             else:
-                print(f"   ❌ Qdrant 檢查失敗: {qdrant_status.get('message', 'Unknown error')}")
-            
+                print(
+                    f"   ❌ Qdrant 檢查失敗: {qdrant_status.get('message', 'Unknown error')}"
+                )
+
             # 檢查 Neo4j 數據
             neo4j_status = status.get("neo4j", {})
             if neo4j_status.get("status") == "success":
@@ -214,7 +234,9 @@ class QueryHandler:
                 if total_nodes == 0:
                     print(f"   ⚠️  警告: 命名空間中沒有圖節點，可能導致查詢無結果")
             else:
-                print(f"   ❌ Neo4j 檢查失敗: {neo4j_status.get('message', 'Unknown error')}")
+                print(
+                    f"   ❌ Neo4j 檢查失敗: {neo4j_status.get('message', 'Unknown error')}"
+                )
         else:
             # 檢查整體數據庫狀態
             await self.db_manager.check_database_status()
