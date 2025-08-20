@@ -31,17 +31,52 @@ LINE_REPLY_ENDPOINT = os.getenv(
 
 
 def verify_line_signature_for_company(
-    body: bytes, x_line_signature: str | None, channel_secret: str
+    body: bytes,
+    x_line_signature: str | None,
+    channel_secret: str,
+    debug: bool = True,
+    skip_verification: bool = False,
 ) -> bool:
     """
     驗證來自 LINE 的請求簽名（使用指定公司的 Channel Secret）。
     使用指定的 Channel Secret 計算 HMAC-SHA256 簽名，並與請求頭中的簽名進行比較。
     """
+    # 臨時跳過簽名驗證（僅用於調試）
+    if skip_verification:
+        if debug:
+            logger.warning("⚠️ 跳過 LINE 簽名驗證 (調試模式)")
+        return True
+
+    if debug:
+        logger.info(f"🔐 簽名驗證調試:")
+        logger.info(
+            f"   Channel Secret: {'已設定' if channel_secret else '未設定'} (長度: {len(channel_secret) if channel_secret else 0})"
+        )
+        # 顯示 Channel Secret 的前幾個字符用於調試
+        logger.info(
+            f"   Channel Secret 前綴: {channel_secret[:8] if channel_secret else 'None'}..."
+        )
+        logger.info(
+            f"   請求簽名: {x_line_signature[:30] if x_line_signature else 'None'}..."
+        )
+        logger.info(f"   請求體長度: {len(body)} bytes")
+        # 顯示請求體的前幾個字符
+        logger.info(f"   請求體前綴: {body[:50].decode('utf-8', errors='ignore')}...")
+
     if not channel_secret or not x_line_signature:
+        if debug:
+            logger.warning(f"❌ 簽名驗證失敗: Channel Secret 或簽名為空")
         return False
 
     mac = hmac.new(channel_secret.encode("utf-8"), body, hashlib.sha256).digest()
     expected = base64.b64encode(mac).decode("utf-8")
+
+    if debug:
+        logger.info(f"   計算出的簽名: {expected[:30]}...")
+        logger.info(
+            f"   簽名匹配: {'✅' if hmac.compare_digest(expected, x_line_signature) else '❌'}"
+        )
+
     return hmac.compare_digest(expected, x_line_signature)
 
 
@@ -86,34 +121,43 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
             logger.info(f"🎫 Reply Token: {reply_token}")
 
             try:
-                # 遍歷所有公司，找出哪個的 Channel Secret 可以驗證這個請求
-                companies = (
+                # 正確的多租戶邏輯：根據 Channel Token 識別公司
+                # 從環境變數獲取當前的 Channel Token
+                line_access_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+
+                if not line_access_token:
+                    logger.error("❌ LINE_CHANNEL_ACCESS_TOKEN 環境變數未設定")
+                    continue
+
+                # 根據 Channel Token 找到對應的公司
+                company = (
                     db.query(Company)
                     .filter(
+                        Company.line_channel_token == line_access_token,
                         Company.is_active == True,
                         Company.line_bot_enabled == True,
-                        Company.line_channel_secret.isnot(None),
                     )
-                    .all()
+                    .first()
                 )
 
-                logger.info(f"🏢 找到 {len(companies)} 家啟用 LINE Bot 的公司")
-
-                company = None
-                for candidate in companies:
-                    logger.info(f"🔍 檢查公司: {candidate.name} (ID: {candidate.id})")
-                    if verify_line_signature_for_company(
-                        raw_body, signature, candidate.line_channel_secret
-                    ):
-                        company = candidate
-                        logger.info(f"✅ 簽名驗證成功，匹配公司: {company.name}")
-                        break
-                    else:
-                        logger.info(f"❌ 簽名驗證失敗: {candidate.name}")
-
                 if not company:
-                    logger.warning("⚠️ 找不到匹配的公司或簽名驗證失敗，跳過此事件")
-                    continue  # 找不到匹配的公司或簽名驗證失敗
+                    logger.error(
+                        f"❌ 找不到對應的公司，Channel Token: {line_access_token[:20]}..."
+                    )
+                    continue
+
+                logger.info(f"✅ 識別到公司: {company.name} (ID: {company.id})")
+
+                # 使用該公司的 Channel Secret 驗證簽名
+                if not verify_line_signature_for_company(
+                    raw_body, signature, company.line_channel_secret
+                ):
+                    logger.error(f"❌ LINE 簽名驗證失敗，公司: {company.name}")
+                    continue
+
+                logger.info(
+                    f"✅ LINE 簽名驗證成功，公司: {company.name}"
+                )  # 找不到匹配的公司或簽名驗證失敗
 
                 company_id = company.id
                 line_access_token = company.line_channel_token
@@ -176,8 +220,10 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                 except Exception as e:
                     logger.warning(f"⚠️ RAG 系統狀態檢查失敗: {e}")
 
-                # 使用 OCR RAG 查詢，傳遞 company_id 確保多租戶隔離
-                answer = await company_rag_service.query(user_text, company_id=str(company_id))
+                # 使用 RAG-Anything 進行文本查詢
+                answer = await company_rag_service.query_text(
+                    user_text, mode="hybrid", company_id=str(company_id)
+                )
                 logger.info(f"💡 生成答案: '{answer[:100]}...' (長度: {len(answer)})")
 
                 # 記錄審計日誌

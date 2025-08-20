@@ -5,8 +5,9 @@ from sqlalchemy import text
 from dotenv import load_dotenv
 
 from app.core.database import get_db
-from app.services.ocr_rag_service import get_ocr_rag_service
+from app.services.rag_anything import get_rag_service
 from app.services.multitenant_rag import get_multitenant_rag_service
+from app.services.neo4j_service import get_neo4j_service
 
 load_dotenv()
 
@@ -19,16 +20,16 @@ def read_root():
     """
     根目錄路由，返回 API 運行狀態。
     """
-    return {"message": "LineRAG API with OCR RAG is running", "status": "ok"}
+    return {"message": "LineRAG API with RAG-Anything is running", "status": "ok"}
 
 
 @router.get("/health")
 async def health_check(db: Session = Depends(get_db)):
     """
     健康檢查路由。
-    檢查 OCR RAG 服務和數據庫連接狀態。
+    檢查 RAG-Anything 服務和數據庫連接狀態。
     """
-    ocr_rag_service = get_ocr_rag_service()
+    rag_service = get_rag_service()
     multitenant_rag = get_multitenant_rag_service()
 
     # 測試數據庫連接
@@ -39,29 +40,31 @@ async def health_check(db: Session = Depends(get_db)):
     except Exception as e:
         db_status = f"error: {str(e)}"
 
-    # 測試 Qdrant 連接
-    qdrant_status = "ok"
+    # 測試 Neo4j 連接
+    neo4j_status = "ok"
     try:
-        # 簡單測試 Qdrant 連接
-        ocr_rag_service.qdrant_client.get_collections()
+        neo4j_service = get_neo4j_service()
+        if not neo4j_service.initialized:
+            await neo4j_service.initialize()
+        await neo4j_service.verify_connectivity()
     except Exception as e:
-        qdrant_status = f"error: {str(e)}"
+        neo4j_status = f"error: {str(e)}"
 
     status = {
         "api": "ok",
-        "ocr_rag": "ok" if ocr_rag_service.initialized else "not_initialized",
+        "rag_anything": rag_service.get_status(),
         "multitenant_rag": "ok",
         "database": db_status,
-        "qdrant": qdrant_status,
-        "framework": "OCR RAG + PostgreSQL + Qdrant Multi-Tenant",
-        "version": "3.0.0",
+        "neo4j": neo4j_status,
+        "framework": "RAG-Anything + PostgreSQL + Neo4j Multi-Tenant",
+        "version": "2.0.0",
     }
 
-    # 測試 OCR RAG 服務
-    if ocr_rag_service.initialized:
+    # 測試 RAG-Anything 服務
+    if rag_service.initialized:
         try:
             # 簡單的測試查詢
-            test_result = await ocr_rag_service.query("測試")
+            test_result = await rag_service.query_text("測試", mode="naive")
             status["test_query"] = "ok" if test_result else "no_data"
         except Exception as e:
             status["test_query"] = f"error: {str(e)}"

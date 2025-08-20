@@ -1,11 +1,11 @@
 """
-多租戶 OCR RAG 服務管理器
+多租戶 RAG-Anything 服務管理器
 """
 
 import os
 from typing import Dict, List, Optional
 from pathlib import Path
-from app.services.ocr_rag_service import OCRRAGService
+from app.services.rag_anything import RAGAnythingService
 from app.models.company import Company
 from sqlalchemy.orm import Session
 
@@ -14,18 +14,16 @@ class MultiTenantRAGService:
     """多租戶 RAG 服務管理器"""
 
     def __init__(self):
-        self.tenant_services: Dict[int, OCRRAGService] = {}
+        self.tenant_services: Dict[int, RAGAnythingService] = {}
 
     async def get_company_rag_service(
         self, company_id: int, db: Session
-    ) -> OCRRAGService:
+    ) -> RAGAnythingService:
         """取得指定公司的 RAG 服務實例"""
 
-        # 暫時清理快取，確保使用正確的工作目錄
-        # TODO: 移除這個臨時修復
+        # 如果已經初始化過，直接回傳
         if company_id in self.tenant_services:
-            print(f"🔄 清理公司 {company_id} 的快取服務實例")
-            del self.tenant_services[company_id]
+            return self.tenant_services[company_id]
 
         # 從資料庫取得公司資訊
         company = db.query(Company).filter(Company.id == company_id).first()
@@ -35,38 +33,20 @@ class MultiTenantRAGService:
         if not company.is_active:
             raise ValueError(f"Company {company_id} is not active")
 
-        # 建立公司專用的 OCR RAG 服務
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        qdrant_host = os.getenv("QDRANT_HOST", "localhost")
-        qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
-        
-        rag_service = OCRRAGService(
-            openai_api_key=openai_api_key,
-            qdrant_host=qdrant_host,
-            qdrant_port=qdrant_port
-        )
+        # 建立公司專用的 RAG 服務
+        rag_service = RAGAnythingService()
 
-        # 初始化服務，使用公司專用的 collection
-        collection_name = f"company_{company_id}_documents"
-        await rag_service.initialize(collection_name=collection_name)
-
-        # 設定公司專用的工作目錄（用於文件上傳存儲）
+        # 使用統一的公司工作目錄邏輯
         working_dir = f"./rag_storage/company_{company_id}"
-
-        # 更新資料庫記錄（確保一致性）
-        if company.rag_working_dir != working_dir:
-            print(
-                f"更新公司 {company_id} 的工作目錄: {company.rag_working_dir} -> {working_dir}"
-            )
-            company.rag_working_dir = working_dir
-            db.commit()
-
+        
         # 確保目錄存在
         Path(working_dir).mkdir(parents=True, exist_ok=True)
 
-        # 存儲公司相關信息到服務中
-        rag_service.company_working_dir = working_dir
-        rag_service.company_id = company_id
+        # 設定基礎目錄，讓 rag_config.py 自動處理公司ID
+        os.environ["RAG_WORKING_DIR"] = "./rag_storage"
+
+        # 初始化服務
+        await rag_service.initialize()
 
         # 快取服務實例
         self.tenant_services[company_id] = rag_service

@@ -1,37 +1,113 @@
-10:17 RagLitee 導入我們的系統後，您可以期待以下幾個顯著的成效：
-
-1. **營運效率提升**：系統能自動化預約、收款及課程安排，這樣可以減少人工作業時間約30%至50%，讓您的團隊能更專注於服務會員。
-
-2. **會員體驗優化**：透過線上預約、付款及推播提醒，能有效降低會員的臨時取消與爽約率，讓會員感受到更流暢的服務。
-
-3. **數據化經營**：您將能隨時掌握營收、課程熱度及會員活躍度，這些數據將有助於您進行行銷及資源分配的決策。
-
-4. **跨分店整合**：如果您有多個場館，系統能集中管理多館資料與報表，減少跨館協調的時間與成本。
-
-根據我們的合作案例，導入後的平均成效顯示，預約率提升20%至35%，課程出席率提升15%至25%，而櫃檯作業時間減少超過40%。這些數據都來自現有合作場館的運營回報與系統分析報表。
-
-如果您還有其他問題或需要更詳細的資訊，隨時告訴我哦！
-10:17 羽翔 那你可以分享什麼
-10:17 RagLitee 您好！感謝您的詢問，我們非常樂意分享成功案例。以下是幾個值得參考的案例：
-
-1. **台中大里運動中心**：他們成功導入我們的系統後，營運效率顯著提升，您可以查看詳細案例分享：[點擊這裡](https://www.gymomo.com/article/casestudy-dail-civil-and-child-sports-center)。
-
-2. **高雄全日運動健身房**：這家連鎖健身房在使用我們的系統後，會員管理與課程預約變得更加順暢，詳細資訊在這裡：[點擊這裡](https://www.gymomo.com/article/casestudy-AlldaySports)。
-
-3. **台北天母力康運動表現中心**：他們利用我們的系統改善了會員體驗，您可以了解更多：[點擊這裡](https://www.gymomo.com/article/casestudy-phcsports)。
-
-4. **台北給力24h健身房**：這家健身房也取得了良好的成效，詳情請參考：[點擊這裡](https://www.gymomo.com/article/casestudy-tdf-fitness)。
-
-如果您對這些案例有任何疑問或需要進一步的資訊，隨時告訴我！希望這些案例能對您有所幫助。還有其他問題嗎？
-10:18 羽翔 運動歐爸怎麼沒有
-10:20 RagLitee 您好！感謝您對運動歐爸的關注。看來您對我們的服務有些疑問，不過您提到的「運動歐爸怎麼沒有」似乎有點不完整，能否請您提供更多具體的問題或需求呢？這樣我才能更好地協助您解答。
-
-我們的系統提供多種功能，包括課程預約、會員管理、金流服務等，幫助場館提升營運效率。如果您有特定的需求或想了解的功能，請告訴我，我會盡快為您提供詳細資訊。期待您的回覆！
-10:20 羽翔 公司是做什麼的
-10:21 RagLitee 您好！感謝您的詢問！我們公司「運動歐巴」專注於為運動產業提供全方位的經營管理系統。我們的系統適用於各類場館，包括健身房、瑜伽教室、運動工作室等，主要功能涵蓋會員管理、課程預約、金流收款、門禁管理等，旨在提升場館的營運效率與會員體驗。
-
-自2000年成立以來，我們已經累積了豐富的經驗，並且目前在全台擁有多家合作夥伴，幫助他們簡化管理流程。如果您有興趣了解更詳細的功能或服務，隨時可以告訴我哦！還有其他問題嗎？
-10:21 羽翔 那你剛剛怎麼沒有回運動歐爸
-10:21 RagLitee 您好！很抱歉剛才沒有及時回覆您關於運動歐爸的問題。運動歐爸是一個專為運動產業設計的全方位管理系統，提供如線上課程購買、預約系統、會員管理等功能，旨在提升場館的營運效率和會員體驗。
-
-如果您對我們的系統有任何特定的問題或需求，歡迎隨時告訴我，我會很樂意為您提供更多詳細資訊。希望能幫助到您！還有其他想了解的嗎？
+2025-08-20 20:59:20,864 DEBUG [python_multipart.multipart] Calling on_end with no data
+================================================================================
+📤 開始文檔上傳流程
+   文件名: 11.pdf
+   公司ID: 12
+   用戶: admin (ID: 10)
+   Content-Type: application/pdf
+================================================================================
+🔍 檢查文件格式: .pdf
+✅ 文件格式檢查通過: .pdf
+📁 創建上傳目錄: uploads\company_12
+💾 準備保存文件到: uploads\company_12\11.pdf
+📖 開始讀取文件內容...
+📊 文件大小: 4565786 bytes (4.35 MB)
+💾 開始寫入文件...
+✅ 文件保存成功: uploads\company_12\11.pdf
+🆔 生成文檔ID: eb81db9d-191e-4c93-953e-7afc082179ad
+📝 創建文檔記錄: 11.pdf -> 狀態: pending
+💾 保存文檔記錄到資料庫...
+✅ 文檔記錄保存成功，資料庫ID: 96
+🚀 啟動背景處理任務...
+   任務ID: eb81db9d-191e-4c93-953e-7afc082179ad
+   文件路徑: uploads\company_12\11.pdf
+   公司ID: 12
+   用戶ID: 10
+✅ 背景任務已加入佇列
+================================================================================
+INFO:     127.0.0.1:5093 - "POST /api/ingest/document HTTP/1.1" 200 OK
+🚀 開始處理文檔背景任務: eb81db9d-191e-4c93-953e-7afc082179ad
+📝 文檔狀態已更新為處理中: eb81db9d-191e-4c93-953e-7afc082179ad
+🔧 獲取 RAG 服務...
+✅ RAG 服務獲取成功
+📄 開始處理文檔: uploads\company_12\11.pdf
+================================================================================
+🔥 RAG-Anything 開始處理文檔
+   文件路徑: uploads\company_12\11.pdf
+   公司ID: 12
+   輸出目錄: ./output
+================================================================================
+📊 檢查文檔...
+   文檔大小: 4565786 bytes (4.35 MB)
+✅ 文檔驗證通過
+🏷️  設定命名空間: company_12
+   QDRANT_WORKSPACE: company_12
+   NEO4J_WORKSPACE: company_12
+📁 公司專用輸出目錄: output\company_12
+🔄 處理文檔內容...
+🔄 重新創建 LightRAG 實例...
+   📌 使用命名空間: company_12
+   📁 工作目錄: ./rag_storage/company_12
+Rerank is enabled but no rerank_model_func provided. Reranking will be skipped.
+🔄 初始化存儲...
+This Neo4j instance does not support creating databases. Try to use Neo4j Desktop/Enterprise version or DozerDB instead. Fallback to use the default database.
+✅ 存儲初始化完成
+🔍 驗證存儲連接...
+   ⚠️  Vector DB 連接異常
+   ✅ Graph Storage 連接正常
+✅ LightRAG 實例重新創建完成
+   📌 處理時命名空間: Qdrant=company_12, Neo4j=company_12
+🚀 使用 RAG-Anything 直接處理和插入文檔...
+2025-08-20 20:59:35,918 INFO [root] MinerU command executed successfully
+✅ RAG-Anything 文檔處理和插入完成
+🔍 驗證內容插入結果...
+🔍 驗證內容插入...
+   📦 company_12_entities: 0 個向量點
+   📦 company_12_chunks: 0 個向量點
+   📦 company_12_relationships: 0 個向量點
+   📊 總向量點數: 0
+   ⚠️  警告: 向量點數量為0，但 RAG-Anything 可能仍在處理中
+🔍 驗證處理結果...
+   輸出文件數量: 0
+⏳ 等待數據同步...
+INFO:     127.0.0.1:5093 - "GET /api/ingest/documents/12 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:5093 - "GET /api/ingest/documents/12 HTTP/1.1" 200 OK
+🔍 驗證文檔處理狀態 - 公司: 12, 文檔: 11.pdf
+   命名空間: company_12
+      📦 company_12_entities: 0 個向量點
+      📦 company_12_chunks: 0 個向量點
+      📦 company_12_relationships: 0 個向量點
+      ⚠️  警告: 命名空間中沒有向量點
+   📊 Qdrant 數據有效: False
+      🔗 Neo4j 節點數: 0
+      ⚠️  警告: 命名空間中沒有圖節點
+   🔗 Neo4j 數據有效: False
+   ✅ 整體驗證結果: False
+⚠️  初次驗證失敗，再等待3秒後重試...
+🔍 驗證文檔處理狀態 - 公司: 12, 文檔: 11.pdf
+   命名空間: company_12
+      📦 company_12_entities: 0 個向量點
+      📦 company_12_chunks: 0 個向量點
+      📦 company_12_relationships: 0 個向量點
+      ⚠️  警告: 命名空間中沒有向量點
+   📊 Qdrant 數據有效: False
+      🔗 Neo4j 節點數: 0
+      ⚠️  警告: 命名空間中沒有圖節點
+   🔗 Neo4j 數據有效: False
+   ✅ 整體驗證結果: False
+⚠️  驗證仍失敗，但繼續處理 (可能是數據同步延遲)
+🎉 文檔處理完全成功!
+   處理文檔: uploads\company_12\11.pdf
+   公司ID: 12
+   文檔大小: 4.35 MB
+   重試次數: 0
+================================================================================
+🔄 清除 QDRANT_WORKSPACE
+🔄 清除 NEO4J_WORKSPACE
+📄 文檔處理結果: success
+2025-08-20 20:59:42,518 DEBUG [app.services.neo4j_service] Constraint/Index creation note: {code: Neo.DatabaseError.Schema.ConstraintCreationFailed} {message: Unable to create Constraint( type='NODE PROPERTY EXISTENCE', schema=(:Entity {company_id}) ):
+Property existence constraint requires Neo4j Enterprise Edition. Note that only the first found violation is shown.}
+2025-08-20 20:59:42,526 DEBUG [app.services.neo4j_service] Constraint/Index creation note: {code: Neo.DatabaseError.Schema.ConstraintCreationFailed} {message: Unable to create Constraint( type='NODE PROPERTY EXISTENCE', schema=(:Document {company_id}) ):
+Property existence constraint requires Neo4j Enterprise Edition. Note that only the first found violation is shown.}
+2025-08-20 20:59:42,534 INFO [app.services.neo4j_service] ✅ Neo4j service initialized successfully
+🔒 資料庫連接已關閉: eb81db9d-191e-4c93-953e-7afc082179ad

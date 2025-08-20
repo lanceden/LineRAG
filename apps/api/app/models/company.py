@@ -36,7 +36,6 @@ class Company(Base):
     max_queries_per_month = Column(Integer, default=10000, comment="每月查詢上限")
 
     # 系統設定
-    rag_working_dir = Column(String(255), comment="RAG 工作目錄")
     storage_quota_gb = Column(Integer, default=10, comment="儲存配額(GB)")
 
     # 時間戳記

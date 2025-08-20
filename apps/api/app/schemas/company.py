@@ -86,7 +86,6 @@ class Company(CompanyBase):
     storage_quota_gb: int = 10
     
     # 系統設定
-    rag_working_dir: Optional[str] = None
     
     # 狀態和時間
     is_active: bool = True

@@ -107,6 +107,73 @@ async def delete_company(
     return {"message": "公司已刪除"}
 
 
+@router.put("/{company_id}/line-settings", response_model=CompanySchema)
+async def update_line_settings(
+    company_id: int,
+    settings: dict,
+    db: Session = Depends(get_db),
+    current_user: SystemUser = Depends(get_current_user),
+):
+    """更新公司 LINE 設定 - 需要 company.edit 權限"""
+    try:
+        company = CompanyService.update_line_settings(
+            db=db,
+            company_id=company_id,
+            channel_token=settings.get("line_channel_token", ""),
+            channel_secret=settings.get("line_channel_secret", ""),
+            bot_enabled=settings.get("line_bot_enabled", True),
+        )
+        return company
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="公司不存在")
+
+
+@router.post("/{company_id}/line-settings/test")
+async def test_line_connection(
+    company_id: int,
+    db: Session = Depends(get_db),
+    current_user: SystemUser = Depends(get_current_user),
+):
+    """測試 LINE Bot 連接 - 需要 company.view 權限"""
+    try:
+        company = CompanyService.get_company(db, company_id)
+
+        if not company.line_channel_token:
+            raise HTTPException(status_code=400, detail="LINE Channel Token 未設定")
+
+        # 測試 LINE API 連接
+        import httpx
+
+        headers = {
+            "Authorization": f"Bearer {company.line_channel_token}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.line.me/v2/bot/info", headers=headers, timeout=10.0
+            )
+
+            if response.status_code == 200:
+                bot_info = response.json()
+                return {
+                    "success": True,
+                    "message": f"LINE Bot 連接成功！Bot 名稱: {bot_info.get('displayName', 'Unknown')}",
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"LINE API 回應錯誤: {response.status_code} - {response.text}",
+                }
+
+    except httpx.TimeoutException:
+        return {"success": False, "message": "連接 LINE API 超時，請檢查網路連接"}
+    except Exception as e:
+        return {"success": False, "message": f"測試失敗: {str(e)}"}
+
+
 @router.get("/{company_id}/stats", response_model=CompanyStats)
 async def get_company_stats(
     company_id: int,
@@ -158,72 +225,3 @@ async def batch_operations(
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.put("/{company_id}/line-settings", response_model=CompanySchema)
-async def update_line_settings(
-    company_id: int,
-    settings: dict,
-    db: Session = Depends(get_db),
-    current_user: SystemUser = Depends(get_current_user),
-):
-    """更新公司 LINE 設定 - 需要 company.edit 權限"""
-    try:
-        company = CompanyService.update_line_settings(
-            db=db,
-            company_id=company_id,
-            channel_token=settings.get("line_channel_token", ""),
-            channel_secret=settings.get("line_channel_secret", ""),
-            bot_enabled=settings.get("line_bot_enabled", True),
-        )
-        return company
-    except (ValueError, ValidationError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.post("/{company_id}/line-settings/test")
-async def test_line_connection(
-    company_id: int,
-    db: Session = Depends(get_db),
-    current_user: SystemUser = Depends(get_current_user),
-):
-    """測試 LINE 連接 - 需要 company.view 權限"""
-    import httpx
-    
-    try:
-        company = CompanyService.get_company(db, company_id)
-        if not company.line_channel_token or not company.line_channel_secret:
-            raise HTTPException(status_code=400, detail="LINE 設定不完整")
-
-        # 測試 LINE Messaging API 連接
-        async with httpx.AsyncClient() as client:
-            # 使用 LINE Bot Info API 來測試連接
-            response = await client.get(
-                "https://api.line.me/v2/bot/info",
-                headers={
-                    "Authorization": f"Bearer {company.line_channel_token}",
-                    "Content-Type": "application/json"
-                },
-                timeout=10.0
-            )
-            
-            if response.status_code == 200:
-                bot_info = response.json()
-                return {
-                    "success": True, 
-                    "message": "LINE Bot 連接測試成功",
-                    "bot_info": {
-                        "display_name": bot_info.get("displayName", ""),
-                        "user_id": bot_info.get("userId", ""),
-                        "basic_id": bot_info.get("basicId", "")
-                    }
-                }
-            elif response.status_code == 401:
-                return {"success": False, "message": "Channel Access Token 無效"}
-            else:
-                return {"success": False, "message": f"LINE API 回應錯誤: {response.status_code}"}
-                
-    except httpx.TimeoutException:
-        return {"success": False, "message": "連接超時，請檢查網路連接"}
-    except Exception as e:
-        return {"success": False, "message": f"連接測試失敗: {str(e)}"}

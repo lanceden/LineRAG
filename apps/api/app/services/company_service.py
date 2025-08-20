@@ -108,9 +108,7 @@ class CompanyService:
         # 建立公司
         company = Company(**company_data.model_dump())
 
-        # 設定 RAG 工作目錄
-        if not company.rag_working_dir:
-            company.rag_working_dir = f"/data/rag/{company.code}"
+        # RAG 工作目錄現在由程式邏輯統一管理，無需設定
 
         db.add(company)
         db.commit()
@@ -179,10 +177,9 @@ class CompanyService:
 
     @staticmethod
     def deactivate_company(db: Session, company_id: int) -> Company:
-        """停用公司 - 同時停用 LINE Bot 但保留設定資料"""
+        """停用公司"""
         company = CompanyService.get_company(db, company_id)
         company.is_active = False
-        company.line_bot_enabled = False  # 停用 LINE Bot 但保留 channel 資料
         company.updated_at = datetime.utcnow()
 
         db.commit()
@@ -240,12 +237,11 @@ class CompanyService:
         storage_used = 0
         storage_limit = company.storage_quota_gb * 1024 * 1024 * 1024  # GB to bytes
 
-        # 計算儲存使用量 (如果有檔案系統統計)
-        if company.rag_working_dir and os.path.exists(company.rag_working_dir):
+        # 計算儲存使用量 (使用統一路徑邏輯)
+        company_rag_dir = f"./rag_storage/company_{company.id}"
+        if os.path.exists(company_rag_dir):
             try:
-                storage_used = CompanyService._calculate_directory_size(
-                    company.rag_working_dir
-                )
+                storage_used = CompanyService._calculate_directory_size(company_rag_dir)
             except:
                 pass
 
@@ -524,14 +520,17 @@ class CompanyService:
         """建立公司相關目錄"""
         import os
 
-        if company.rag_working_dir:
-            try:
-                os.makedirs(company.rag_working_dir, exist_ok=True)
-                os.makedirs(f"{company.rag_working_dir}/documents", exist_ok=True)
-                os.makedirs(f"{company.rag_working_dir}/vectors", exist_ok=True)
-                os.makedirs(f"{company.rag_working_dir}/temp", exist_ok=True)
-            except Exception as e:
-                print(f"建立目錄失敗: {e}")
+        # 使用統一路徑邏輯創建公司目錄
+        try:
+            company_rag_dir = f"./rag_storage/company_{company.id}"
+            company_upload_dir = f"./uploads/company_{company.id}"
+            company_output_dir = f"./output/company_{company.id}"
+            
+            os.makedirs(company_rag_dir, exist_ok=True)
+            os.makedirs(company_upload_dir, exist_ok=True)
+            os.makedirs(company_output_dir, exist_ok=True)
+        except Exception as e:
+            print(f"建立目錄失敗: {e}")
 
     @staticmethod
     def _calculate_directory_size(directory: str) -> int:

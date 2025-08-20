@@ -8,7 +8,6 @@ import uuid
 import json
 from typing import Dict, Any, List
 from pathlib import Path
-from datetime import datetime
 
 from fastapi import (
     APIRouter,
@@ -34,9 +33,16 @@ router = APIRouter(prefix="", tags=["ingest"])
 
 
 async def process_document_task(
-    task_id: str, file_path: str, company_id: int, uploaded_by: int, db: Session
+    task_id: str, file_path: str, company_id: int, uploaded_by: int
 ):
     """背景任務：處理文檔"""
+    print(f"🚀 開始處理文檔背景任務: {task_id}")
+
+    # 創建新的資料庫 Session 用於背景任務
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+
     try:
         # 更新文檔狀態為處理中
         document = (
@@ -48,15 +54,18 @@ async def process_document_task(
         if document:
             document.processing_status = "processing"
             db.commit()
+            print(f"📝 文檔狀態已更新為處理中: {task_id}")
 
         # 獲取多租戶 RAG 服務
+        print(f"🔧 獲取 RAG 服務...")
         multitenant_rag = get_multitenant_rag_service()
         rag_service = await multitenant_rag.get_company_rag_service(company_id, db)
+        print(f"✅ RAG 服務獲取成功")
 
-        # 使用 RAG-Anything 處理文檔，確保使用公司專用的工作目錄
-        result = await rag_service.process_document(
-            file_path, str(company_id), output_dir=rag_service.company_working_dir
-        )
+        # 使用 RAG-Anything 處理文檔
+        print(f"📄 開始處理文檔: {file_path}")
+        result = await rag_service.process_document(file_path, str(company_id))
+        print(f"📄 文檔處理結果: {result.get('status', 'unknown')}")
 
         if result["status"] == "success":
             # 更新文檔狀態為完成
@@ -71,7 +80,7 @@ async def process_document_task(
                             file_path=file_path,
                             company_id=company_id,
                             document_metadata={
-                                "document_id": document.document_id,
+                                "id": document.id,
                                 "filename": document.original_filename,
                                 "file_path": file_path,
                                 "file_type": document.mime_type,
@@ -80,24 +89,10 @@ async def process_document_task(
                         )
                     )
 
-                    # 知識圖譜建立成功，更新文檔處理資訊
+                    # 更新文檔元資料包含圖譜資訊
                     if graph_result["status"] == "success":
-                        # 更新處理完成時間
-                        document.processed_at = datetime.utcnow()
-
-                        # 更新統計信息（如果 RAG 服務返回了相關數據）
-                        if "chunk_count" in graph_result:
-                            document.chunk_count = graph_result["chunk_count"]
-                        if "processing_time" in graph_result:
-                            document.processing_time = graph_result["processing_time"]
-
-                        # 知識圖譜本身存儲在 Neo4j 中，這裡只記錄成功狀態
+                        document.metadata.update({"knowledge_graph": graph_result})
                         db.commit()
-                    else:
-                        # 知識圖譜建立失敗，但文檔處理仍算成功
-                        print(
-                            f"Knowledge graph creation failed: {graph_result.get('message', 'Unknown error')}"
-                        )
 
                 except Exception as e:
                     # 圖譜建構失敗不影響文檔處理
@@ -110,16 +105,32 @@ async def process_document_task(
                 db.commit()
 
     except Exception as e:
+        print(f"❌ 背景任務處理失敗: {task_id}, 錯誤: {str(e)}")
+        import traceback
+
+        print(f"📋 錯誤詳情: {traceback.format_exc()}")
+
         # 更新文檔狀態為失敗
-        document = (
-            db.query(DocumentMetadata)
-            .filter(DocumentMetadata.document_id == task_id)
-            .first()
-        )
-        if document:
-            document.processing_status = "failed"
-            document.error_message = str(e)
-            db.commit()
+        try:
+            document = (
+                db.query(DocumentMetadata)
+                .filter(DocumentMetadata.document_id == task_id)
+                .first()
+            )
+            if document:
+                document.processing_status = "failed"
+                document.error_message = str(e)
+                db.commit()
+                print(f"📝 文檔狀態已更新為失敗: {task_id}")
+        except Exception as db_error:
+            print(f"❌ 更新文檔狀態失敗: {str(db_error)}")
+    finally:
+        # 確保資料庫連接被關閉
+        try:
+            db.close()
+            print(f"🔒 資料庫連接已關閉: {task_id}")
+        except Exception as close_error:
+            print(f"❌ 關閉資料庫連接失敗: {str(close_error)}")
 
 
 @router.post("/ingest/document", response_model=IngestResponse)
@@ -134,6 +145,14 @@ async def ingest_document(
     上傳並處理單個文檔
     支援 PDF、Office 文檔、圖像等格式
     """
+    print("=" * 80)
+    print(f"📤 開始文檔上傳流程")
+    print(f"   文件名: {file.filename}")
+    print(f"   公司ID: {company_id}")
+    print(f"   用戶: {current_user.username} (ID: {current_user.id})")
+    print(f"   Content-Type: {file.content_type}")
+    print("=" * 80)
+
     # TODO: 待實現權限檢查邏輯
 
     # 檢查文件格式
@@ -149,56 +168,82 @@ async def ingest_document(
         ".tiff",
     }
     file_extension = Path(file.filename).suffix.lower()
+    print(f"🔍 檢查文件格式: {file_extension}")
 
     if file_extension not in allowed_extensions:
+        print(f"❌ 不支援的文件格式: {file_extension}")
         raise HTTPException(
             status_code=400,
             detail=f"不支援的文件格式: {file_extension}. 支援的格式: {', '.join(allowed_extensions)}",
         )
 
+    print(f"✅ 文件格式檢查通過: {file_extension}")
+
     # 創建上傳目錄
-    upload_dir = Path("uploads") / str(company_id)
+    upload_dir = Path("uploads") / f"company_{company_id}"
     upload_dir.mkdir(parents=True, exist_ok=True)
+    print(f"📁 創建上傳目錄: {upload_dir}")
 
     # 保存上傳的文件
     file_path = upload_dir / file.filename
+    print(f"💾 準備保存文件到: {file_path}")
 
     try:
+        print(f"📖 開始讀取文件內容...")
         content = await file.read()
+        file_size = len(content)
+        print(f"📊 文件大小: {file_size} bytes ({file_size/1024/1024:.2f} MB)")
+
+        print(f"💾 開始寫入文件...")
         with open(file_path, "wb") as f:
             f.write(content)
+        print(f"✅ 文件保存成功: {file_path}")
     except Exception as e:
+        print(f"❌ 文件保存失敗: {str(e)}")
         raise HTTPException(status_code=500, detail=f"文件保存失敗: {str(e)}")
 
     # 創建文檔記錄
     doc_id = str(uuid.uuid4())
+    print(f"🆔 生成文檔ID: {doc_id}")
+
     document = DocumentMetadata(
         document_id=doc_id,
         original_filename=file.filename,
         file_path=str(file_path),
-        file_size=len(content),
+        file_size=file_size,
         mime_type=file_extension,
         company_id=company_id,
         created_by=current_user.username or str(current_user.id),
         processing_status="pending",
     )
+    print(f"📝 創建文檔記錄: {file.filename} -> 狀態: pending")
 
     try:
+        print(f"💾 保存文檔記錄到資料庫...")
         db.add(document)
         db.commit()
         db.refresh(document)
+        print(f"✅ 文檔記錄保存成功，資料庫ID: {document.id}")
     except Exception as e:
+        print(f"❌ 資料庫錯誤: {str(e)}")
         raise HTTPException(status_code=500, detail=f"資料庫錯誤: {str(e)}")
 
     # 啟動背景任務
+    print(f"🚀 啟動背景處理任務...")
+    print(f"   任務ID: {doc_id}")
+    print(f"   文件路徑: {file_path}")
+    print(f"   公司ID: {company_id}")
+    print(f"   用戶ID: {current_user.id}")
+
     background_tasks.add_task(
         process_document_task,
         doc_id,
         str(file_path),
         company_id,
         current_user.id,
-        db,
     )
+    print(f"✅ 背景任務已加入佇列")
+    print("=" * 80)
 
     return IngestResponse(
         task_id=doc_id,
@@ -219,7 +264,7 @@ async def ingest_folder(
     批量處理資料夾中的文檔
     """
     # 檢查用戶權限
-    user_service = get_multitenant_user_service(db)
+    user_service = get_multitenant_user_service()
     user = await user_service.get_user_by_id(user_id, db)
     if not user or user.company_id != company_id:
         raise HTTPException(status_code=403, detail="沒有權限訪問此公司資源")
@@ -238,10 +283,8 @@ async def ingest_folder(
             multitenant_rag = get_multitenant_rag_service()
             rag_service = await multitenant_rag.get_company_rag_service(company_id, db)
 
-            # 使用 RAG-Anything 批量處理，確保使用公司專用的工作目錄
-            result = await rag_service.process_folder(
-                folder_path, str(company_id), output_dir=rag_service.company_working_dir
-            )
+            # 使用 RAG-Anything 批量處理
+            result = await rag_service.process_folder(folder_path, str(company_id))
 
             # 為批次中的每個文件創建文檔記錄
             if result["status"] == "success" and "processed_files" in result:
@@ -373,11 +416,9 @@ async def get_ingest_status(task_id: str, db: Session = Depends(get_db)):
         "file_path": document.file_path,
         "file_size": document.file_size,
         "file_type": document.mime_type,
-        "uploaded_at": document.uploaded_at,
+        "created_at": document.uploaded_at,
         "processed_at": document.processed_at,
         "error_message": document.error_message,
-        "chunk_count": document.chunk_count,
-        "processing_time": document.processing_time,
     }
 
 
@@ -405,17 +446,16 @@ async def list_company_documents(
     return {
         "documents": [
             {
-                "id": doc.document_id,
+                "id": doc.id,
+                "document_id": doc.document_id,
                 "filename": doc.original_filename,
                 "file_path": doc.file_path,
                 "file_size": doc.file_size,
                 "file_type": doc.mime_type,
                 "status": doc.processing_status,
-                "uploaded_at": doc.uploaded_at,
+                "created_at": doc.uploaded_at,
                 "processed_at": doc.processed_at,
                 "error_message": doc.error_message,
-                "chunk_count": doc.chunk_count,
-                "processing_time": doc.processing_time,
             }
             for doc in documents
         ],
@@ -434,24 +474,38 @@ async def delete_document(
     """
     刪除文檔及其相關數據
     """
-    # 獲取文檔
-    document = (
-        db.query(DocumentMetadata)
-        .filter(DocumentMetadata.document_id == document_id)
-        .first()
-    )
+    # 獲取文檔 - 支援 id 或 document_id 查詢
+    document = None
+
+    # 先嘗試用數字 id 查詢
+    if document_id.isdigit():
+        document = (
+            db.query(DocumentMetadata)
+            .filter(DocumentMetadata.id == int(document_id))
+            .first()
+        )
+
+    # 如果沒找到，再用 document_id (UUID) 查詢
+    if not document:
+        document = (
+            db.query(DocumentMetadata)
+            .filter(DocumentMetadata.document_id == document_id)
+            .first()
+        )
 
     if not document:
         raise HTTPException(status_code=404, detail="文檔不存在")
 
-    # 從 RAG 服務中刪除文檔數據（包括 Neo4j 知識圖譜）
+    # 從 RAG 服務中刪除文檔數據
     try:
         multitenant_rag = get_multitenant_rag_service()
         rag_service = await multitenant_rag.get_company_rag_service(
             document.company_id, db
         )
-        # 刪除文檔及其相關的知識圖譜
-        await rag_service.delete_document(document.file_path, document.document_id)
+        # 使用 document_id 和 company_id 作為參數
+        await rag_service.delete_document(
+            document.document_id, str(document.company_id)
+        )
     except Exception as e:
         print(f"從 RAG 服務刪除文檔時出錯: {str(e)}")
 

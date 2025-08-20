@@ -17,5 +17,12 @@ def setup_logging() -> logging.Logger:
         level=level,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
+    
+    # 抑制第三方庫的DEBUG日誌
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    
     logger = logging.getLogger("linerag")
     return logger

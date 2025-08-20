@@ -9,7 +9,7 @@
 docker-compose up -d
 
 # 或者分別啟動
-docker-compose up -d qdrant neo4j prometheus grafana
+docker-compose up -d qdrant prometheus grafana
 ```
 
 ### 訪問監控介面

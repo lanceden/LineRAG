@@ -33,13 +33,22 @@ async def init_database():
     db = SessionLocal()
 
     try:
-        # 清除所有現有資料（重新初始化）
+        # 清除所有現有資料（重新初始化）- 按外鍵依賴順序
         print("Clearing existing data...")
+
+        # 先清除依賴表
+        from app.models.document import DocumentMetadata
+        from app.models.tenant_user import TenantUser
+
         db.query(UserPermission).delete()
+        db.query(DocumentMetadata).delete()  # 先刪除文檔記錄
+        db.query(TenantUser).delete()  # 刪除租戶用戶
+
+        # 再清除主表
         db.query(Permission).delete()
         db.query(SystemUser).delete()
         db.query(Company).delete()
-        # 如果有其他相關表也在這裡清除
+
         db.commit()
         print("Existing data cleared successfully")
 
@@ -53,7 +62,6 @@ async def init_database():
                 "subscription_plan": "standard",
                 "max_documents": 1000,
                 "max_queries_per_month": 10000,
-                "rag_working_dir": "./rag_storage/company_1",
             },
             {
                 "name": "示範公司 B",
@@ -63,7 +71,6 @@ async def init_database():
                 "subscription_plan": "premium",
                 "max_documents": 5000,
                 "max_queries_per_month": 50000,
-                "rag_working_dir": "./rag_storage/company_2",
             },
         ]
 

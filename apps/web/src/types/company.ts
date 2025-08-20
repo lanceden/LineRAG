@@ -13,7 +13,6 @@ export interface Company {
   subscription_plan: string
   max_documents: number
   max_queries_per_month: number
-  rag_working_dir?: string
   storage_quota_gb: number
   created_at: string
   updated_at?: string
@@ -98,7 +97,6 @@ export interface UpdateCompanyRequest {
   max_documents?: number
   max_queries_per_month?: number
   storage_quota_gb?: number
-  rag_working_dir?: string
   subscription_plan?: string
   settings?: Partial<CompanySettings>
 }

@@ -33,7 +33,6 @@ export function SystemConfigDialog({
     max_documents: 0,
     max_queries_per_month: 0,
     storage_quota_gb: 0,
-    rag_working_dir: "",
   })
   const [loading, setLoading] = useState(false)
 
@@ -43,7 +42,6 @@ export function SystemConfigDialog({
         max_documents: company.max_documents || 0,
         max_queries_per_month: company.max_queries_per_month || 0,
         storage_quota_gb: company.storage_quota_gb || 0,
-        rag_working_dir: company.rag_working_dir || "",
       })
     }
   }, [company, open])
@@ -59,7 +57,6 @@ export function SystemConfigDialog({
         max_documents: configData.max_documents,
         max_queries_per_month: configData.max_queries_per_month,
         storage_quota_gb: configData.storage_quota_gb,
-        rag_working_dir: configData.rag_working_dir,
       })
 
       onSuccess()
@@ -72,18 +69,11 @@ export function SystemConfigDialog({
   }
 
   const handleInputChange = (field: string, value: string) => {
-    if (field === "rag_working_dir") {
-      setConfigData((prev) => ({
-        ...prev,
-        [field]: value,
-      }))
-    } else {
-      const numValue = parseInt(value) || 0
-      setConfigData((prev) => ({
-        ...prev,
-        [field]: numValue,
-      }))
-    }
+    const numValue = parseInt(value) || 0
+    setConfigData((prev) => ({
+      ...prev,
+      [field]: numValue,
+    }))
   }
 
   if (!company) return null
@@ -164,21 +154,6 @@ export function SystemConfigDialog({
             </p>
           </div>
 
-          {/* RAG 工作目錄 */}
-          <div className="space-y-2">
-            <Label htmlFor="rag_working_dir">RAG 工作目錄</Label>
-            <Input
-              id="rag_working_dir"
-              placeholder="./rag_storage/company_1"
-              value={configData.rag_working_dir}
-              onChange={(e) =>
-                handleInputChange("rag_working_dir", e.target.value)
-              }
-            />
-            <p className="text-xs text-muted-foreground">
-              設定該公司的 RAG 處理工作目錄，留空使用預設路徑
-            </p>
-          </div>
 
           {/* 配額狀態提示 */}
           <div className="p-4 bg-muted/50 rounded-lg">
