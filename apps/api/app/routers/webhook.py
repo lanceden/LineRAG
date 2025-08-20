@@ -13,6 +13,8 @@ from app.schemas.ask import Message
 from app.services.multitenant_rag import get_multitenant_rag_service
 from app.services.multitenant_user import get_multitenant_user_service
 from app.services.company_service import CompanyService
+from app.services.conversation_service import get_conversation_service
+from app.services.analytics_service import get_analytics_service
 from app.models.company import Company
 from app.core.database import get_db
 
@@ -64,15 +66,19 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
         events = body.get("events", [])
         logger.info(f"🎯 收到 {len(events)} 個事件")
     except Exception as e:
-        logger.error(f"❌ 解析請求體失敗: {e}")
+        logger.error(f"[ERROR] 解析請求體失敗: {e}")
         return "error"
 
     # 取得多租戶服務
     multitenant_rag_service = get_multitenant_rag_service()
     user_service = get_multitenant_user_service(db)
+    conversation_service = get_conversation_service()
+    analytics_service = get_analytics_service(db)
 
     for i, event in enumerate(events):
-        logger.info(f"🔄 處理事件 {i+1}/{len(events)}: {event.get('type', 'unknown')}")
+        logger.info(
+            f"[PROCESS] 處理事件 {i+1}/{len(events)}: {event.get('type', 'unknown')}"
+        )
 
         if (
             event.get("type") == "message"
@@ -106,13 +112,15 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                         raw_body, signature, candidate.line_channel_secret
                     ):
                         company = candidate
-                        logger.info(f"✅ 簽名驗證成功，匹配公司: {company.name}")
+                        logger.info(f"[SUCCESS] 簽名驗證成功，匹配公司: {company.name}")
                         break
                     else:
-                        logger.info(f"❌ 簽名驗證失敗: {candidate.name}")
+                        logger.info(f"[FAILED] 簽名驗證失敗: {candidate.name}")
 
                 if not company:
-                    logger.warning("⚠️ 找不到匹配的公司或簽名驗證失敗，跳過此事件")
+                    logger.warning(
+                        "[WARNING] 找不到匹配的公司或簽名驗證失敗，跳過此事件"
+                    )
                     continue  # 找不到匹配的公司或簽名驗證失敗
 
                 company_id = company.id
@@ -163,9 +171,11 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                         files = list(Path(working_dir).rglob("*"))
                         logger.info(f"📂 工作目錄檔案數量: {len(files)}")
                         if files:
-                            logger.info(f"📄 部分檔案: {[f.name for f in files[:5]]}")
+                            logger.info(
+                                f"[FILES] 部分檔案: {[f.name for f in files[:5]]}"
+                            )
                     else:
-                        logger.warning(f"⚠️ 工作目錄不存在: {working_dir}")
+                        logger.warning(f"[WARNING] 工作目錄不存在: {working_dir}")
 
                     # 檢查公司 ID
                     if hasattr(company_rag_service, "company_id"):
@@ -176,9 +186,59 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                 except Exception as e:
                     logger.warning(f"⚠️ RAG 系統狀態檢查失敗: {e}")
 
-                # 使用 OCR RAG 查詢，傳遞 company_id 確保多租戶隔離
-                answer = await company_rag_service.query(user_text, company_id=str(company_id))
-                logger.info(f"💡 生成答案: '{answer[:100]}...' (長度: {len(answer)})")
+                # 獲取對話歷史
+                conversation_history = conversation_service.get_recent_context(
+                    company_id=str(company_id), user_id=line_user_id, last_n=3
+                )
+
+                logger.info(f"💭 對話歷史: {len(conversation_history)} 輪")
+
+                # 記錄開始時間用於計算回應時間
+                import time
+
+                start_time = time.time()
+
+                # 使用 OCR RAG 查詢，傳遞對話歷史支援上下文理解
+                try:
+                    answer = await company_rag_service.query(
+                        user_text,
+                        company_id=str(company_id),
+                        conversation_history=conversation_history,
+                    )
+                    response_time_ms = int((time.time() - start_time) * 1000)
+                    status = "success"
+                    error_msg = None
+                    logger.info(
+                        f"💡 生成答案: '{answer[:100]}...' (長度: {len(answer)}, 耗時: {response_time_ms}ms)"
+                    )
+
+                except Exception as rag_error:
+                    response_time_ms = int((time.time() - start_time) * 1000)
+                    status = "failed"
+                    error_msg = str(rag_error)
+                    answer = "抱歉，系統暫時無法回應，請稍後再試。"
+                    logger.error(f"❌ RAG 查詢失敗: {rag_error}")
+
+                # 記錄對話統計 (同步，簡化處理)
+                try:
+                    analytics_service.log_conversation(
+                        company_id=company_id,
+                        user_id=line_user_id,
+                        question=user_text,
+                        response_time_ms=response_time_ms,
+                        status=status,
+                        error_message=error_msg,
+                    )
+                except Exception as analytics_error:
+                    logger.warning(f"⚠️ Analytics 記錄失敗: {analytics_error}")
+
+                # 儲存對話記錄
+                conversation_service.add_conversation(
+                    company_id=str(company_id),
+                    user_id=line_user_id,
+                    user_message=user_text,
+                    assistant_response=answer,
+                )
 
                 # 記錄審計日誌
                 await user_service.log_audit(
