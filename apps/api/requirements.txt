@@ -10,8 +10,11 @@ pydantic
 requests
 httpx
 
-# RAG-Anything framework - Multi-modal RAG system
-raganything[all]
+# RAG-Anything framework - Multi-modal RAG system (local install)
+-e ../../RAG-Anything-main
+
+# LightRAG - Use local compatible version
+-e ../../LightRAG-RAGAnything
 
 # Vector database (Qdrant for RAG-Anything)
 qdrant-client
