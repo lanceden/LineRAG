@@ -49,30 +49,34 @@ class RAGAnythingService:
         # 狀態
         self.initialized = False
 
+    def __init__(self, company_id: str = None):
+        """初始化 RAG-Anything 服務"""
+        # 載入配置
+        self.config = RAGConfig(company_id=company_id)
+
+        # 服務狀態
+        self.initialized = False
+        self.company_id = company_id
+
+        # 實例緩存 - 避免重複創建，但在初始化時清空避免舊狀態
+        self.rag_instance_cache = {}
+
+        print(f"🏗️ RAG-Anything 服務初始化中... (公司 ID: {company_id})")
+
     async def initialize(self, company_id: str = None):
-        """初始化 RAG-Anything 系統"""
-        if self.initialized:
-            return
-
+        """初始化 RAG-Anything 服務"""
         try:
-            print("🔄 開始初始化 RAG-Anything 服務...")
+            print("🚀 初始化 RAG-Anything 服務...")
 
-            # 更新配置
-            if company_id:
-                self.config.company_id = company_id
-
-            # 打印配置摘要
-            self.config.print_config_summary()
-
-            # 確保工作目錄存在
-            self.config.ensure_working_dir()
+            # 清空舊的緩存，防止舊狀態干擾
+            self.rag_instance_cache.clear()
+            print("🧹 清空 RAG 實例緩存")
 
             # 設置環境變數（如果有 company_id）
             if company_id:
+                self.company_id = company_id
+                self.config.company_id = company_id
                 self._setup_environment()
-
-            # 注意：不在這裡創建 RAG-Anything 實例
-            # 實例將在每次處理時動態創建以使用正確的命名空間
 
             # 初始化數據庫管理器
             self.db_manager = DatabaseManager(self.config)
@@ -470,13 +474,25 @@ class RAGAnythingService:
                 target_top_n = top_n or rerank_config.get("top_n", 10)
                 return documents[:target_top_n]
 
-        # 創建 LightRAG 實例（加載已存在的數據）
-        lightrag_instance = LightRAG(
-            working_dir=self.config.working_dir,
-            llm_model_func=llm_model_func,
-            embedding_func=embedding_func,
-            rerank_model_func=rerank_model_func,  # 添加重排序函數
-        )
+        # 依環境開關決定是否啟用重排序（預設停用以降低延遲）
+        rerank_enabled = os.getenv("RERANK_ENABLED", "false").lower() == "true"
+        if rerank_enabled:
+            print("🟢 啟用重排序（RERANK_ENABLED=true）")
+            # 創建 LightRAG 實例（加載已存在的數據），附加重排序函數
+            lightrag_instance = LightRAG(
+                working_dir=self.config.working_dir,
+                llm_model_func=llm_model_func,
+                embedding_func=embedding_func,
+                rerank_model_func=rerank_model_func,
+            )
+        else:
+            print("⚪ 已停用重排序（RERANK_ENABLED=false）")
+            # 創建 LightRAG 實例（加載已存在的數據），不掛載重排序
+            lightrag_instance = LightRAG(
+                working_dir=self.config.working_dir,
+                llm_model_func=llm_model_func,
+                embedding_func=embedding_func,
+            )
 
         # 初始化存儲（加載已存在的數據）
         await lightrag_instance.initialize_storages()

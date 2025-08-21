@@ -3,11 +3,31 @@ RAG-Anything 查詢處理器
 """
 
 import asyncio
+import os
+import time
+
 from typing import List, Dict, Any
 from .rag_config import RAGConfig
 from .rag_database_manager import DatabaseManager
 from app.utils.namespace import AsyncNamespaceContext
 from app.utils.data_validator import verify_query_data_exists
+
+# 中文註解：公司級資料健檢結果快取（避免每次打 DB），TTL 預設 10 分鐘
+_CHECK_CACHE_TTL_SECONDS = int(os.getenv("QUERY_CHECK_TTL", "600"))
+_company_check_cache: Dict[int, float] = {}
+
+
+def _should_skip_precheck(company_id: int) -> bool:
+    # 中文註解：若公司有快取且未過期，則跳過資料健檢
+    ts = _company_check_cache.get(company_id)
+    if ts is None:
+        return False
+    return (time.time() - ts) < _CHECK_CACHE_TTL_SECONDS
+
+
+def _mark_precheck(company_id: int):
+    # 中文註解：記錄該公司最後一次資料健檢時間
+    _company_check_cache[company_id] = time.time()
 
 
 class QueryHandler:
@@ -34,22 +54,34 @@ class QueryHandler:
         try:
             # 直接處理查詢，不使用異步上下文管理器
             if company_id:
-                # 查詢前驗證數據存在
-                data_exists = await verify_query_data_exists(int(company_id))
-                if not data_exists:
-                    raise ValueError(f"No data found for company {company_id}")
+                t0 = time.time()
+                # 查詢前驗證數據存在（加入公司級快取，預設 10 分鐘）
+                if not _should_skip_precheck(int(company_id)):
+                    data_exists = await verify_query_data_exists(int(company_id))
+                    if not data_exists:
+                        raise ValueError(f"No data found for company {company_id}")
+                    _mark_precheck(int(company_id))
+                    print(f"⏱️ Precheck 耗時: {time.time() - t0:.2f}s")
+                else:
+                    print("⏭️ 跳過資料健檢（公司級快取尚有效）")
+                t1 = time.time()
 
                 # 動態獲取當前公司的 RAG-Anything 實例
-                print(f"🔧 為公司 {company_id} 動態創建 RAG-Anything 實例...")
+                print(f"🔧 為公司 {company_id} 動態創建/取得 RAG 查詢實例...")
                 rag_instance = await self.rag_service.get_rag_instance_for_company(
                     str(company_id)
                 )
+                print(f"⏱️ 取得查詢實例耗時: {time.time() - t1:.2f}s")
 
+                # 執行查詢
                 print(f"🚀 執行 RAG 查詢...")
-                # 啟用重排序功能以提升結果質量
-                result = await rag_instance.aquery(query, mode=mode)
+                t2 = time.time()
+                result = await rag_instance.aquery(
+                    query, mode=mode, enable_rerank=False
+                )
+                print(f"⏱️ aquery 耗時: {time.time() - t2:.2f}s")
 
-                print(f"✅ RAG 查詢完成")
+                print(f"✅ RAG 查詢完成 (總耗時: {time.time() - t0:.2f}s)")
                 print(f"   結果長度: {len(result)} 字符")
                 print(f"   結果預覽: {result[:100]}...")
                 print("=" * 80)
@@ -62,7 +94,9 @@ class QueryHandler:
                     "default"
                 )
                 # 啟用重排序功能以提升結果質量
-                result = await rag_instance.aquery(query, mode=mode)
+                result = await rag_instance.aquery(
+                    query, mode=mode, enable_rerank=False
+                )
                 print(f"✅ RAG 查詢完成")
                 return result
 

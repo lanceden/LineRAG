@@ -46,6 +46,10 @@ async def lifespan(app: FastAPI):
 
     # Initialize Multi-Tenant RAG service
     multitenant_rag_service = get_multitenant_rag_service()
+
+    # 清空所有緩存，防止舊狀態引起重複對話
+    multitenant_rag_service.clear_all_caches()
+
     logger.info("✅ Multi-Tenant RAG service initialized successfully")
 
     # Initialize RAG-Anything service

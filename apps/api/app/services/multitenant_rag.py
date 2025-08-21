@@ -16,6 +16,11 @@ class MultiTenantRAGService:
     def __init__(self):
         self.tenant_services: Dict[int, RAGAnythingService] = {}
 
+    def clear_all_caches(self):
+        """清空所有緩存，防止舊狀態干擾伺服器啟動"""
+        print("🧹 清空多租戶 RAG 服務緩存")
+        self.tenant_services.clear()
+
     async def get_company_rag_service(
         self, company_id: int, db: Session
     ) -> RAGAnythingService:
@@ -38,7 +43,7 @@ class MultiTenantRAGService:
 
         # 使用統一的公司工作目錄邏輯
         working_dir = f"./rag_storage/company_{company_id}"
-        
+
         # 確保目錄存在
         Path(working_dir).mkdir(parents=True, exist_ok=True)
 

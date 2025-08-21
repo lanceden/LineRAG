@@ -30,6 +30,90 @@ LINE_REPLY_ENDPOINT = os.getenv(
 )
 
 
+# 客服口吻重寫：將 RAG 原始答案改寫為客服風格（使用 OpenAI 相容 API）
+# 中文註解：若無 OPENAI_API_KEY 或發生錯誤，將回傳原始答案，確保不中斷
+import json
+
+
+# 中文註解：判斷是否為結構化輸出（JSON / 程式碼塊 / 表格等），若是則避免重寫以免破壞格式
+def looks_structured(text: str) -> bool:
+    # 嘗試解析 JSON
+    try:
+        json.loads(text)
+        return True
+    except Exception:
+        pass
+    # 程式碼塊（含 ```）
+    if "```" in text:
+        return True
+    # 簡易表格樣式（管線符 + 分隔線）
+    if "|" in text and "---" in text:
+        return True
+    return False
+
+
+async def rewrite_to_cs_tone(user_query: str, rag_answer: str) -> str:
+    api_key = os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    model = os.getenv("REWRITE_MODEL", "gpt-4o-mini")
+
+    # 若未設定 API Key，直接返回原文
+    if not api_key:
+        logger.warning("⚠️ 未設定 OPENAI_API_KEY，跳過客服口吻重寫")
+        return rag_answer
+
+    system_prompt = (
+        "你是一位生動活潑且專業的客服人員，回覆使用繁體中文，語氣自然有溫度、口語化但不失專業。\n"
+        "可適度加入表情符號（最多 2 個），提升親和力。\n"
+        "禁止使用模糊詞（如：應該、可能、或許）。\n"
+        "不得改動數字、金額、日期、百分比、時間、專有名詞與產品型號。\n"
+        "若原文為結構化資訊（JSON、程式碼、表格），請完整保留內容，僅在前後加上一句簡短說明。\n"
+        "不要使用 Markdown 標題或編號樣式。\n"
+        "輸出格式：\n"
+        "開頭 1 句同理與確認需求；\n"
+        "接著以 3–5 個短句條列重點（每點前置『- 』）；\n"
+        "最後給出明確下一步或行動建議，並邀請追問。\n"
+    )
+    user_prompt = (
+        f"用戶問題：{user_query}\n"
+        f"RAG原始答案（內容正確，但需改寫口吻）：\n{rag_answer}\n"
+        "請依系統要求重寫。"
+    )
+
+    # 若為結構化輸出，避免重寫以免破壞格式
+    if looks_structured(rag_answer):
+        return rag_answer
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.3,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                f"{base_url}/chat/completions", headers=headers, json=payload
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content")
+            if not content:
+                logger.warning("⚠️ 重寫服務回應內容為空，改用原文")
+                return rag_answer
+            return content.strip()
+    except Exception as e:
+        logger.warning(f"⚠️ 回覆重寫失敗：{e}，改用原文")
+        return rag_answer
+
+
 def verify_line_signature_for_company(
     body: bytes,
     x_line_signature: str | None,
@@ -128,6 +212,34 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
 
             logger.info(f"💬 收到文字訊息: '{user_text}' from {line_user_id}")
             logger.info(f"🎫 Reply Token: {reply_token}")
+
+            # 去重保險 1：忽略 LINE 平台重送事件（isRedelivery=True 代表同一事件重送）
+            if event.get("deliveryContext", {}).get("isRedelivery"):
+                logger.info("⏭️ 檢測到 isRedelivery=True，忽略重送事件以避免重複回覆")
+                continue
+
+            # 去重保險 2：以 replyToken 做去重，若已處理成功則跳過
+            try:
+                # 延遲載入，避免循環引用；若頂部已匯入會自動覆用
+                from app.models.audit import AuditLog  # type: ignore
+
+                existing_log = (
+                    db.query(AuditLog)
+                    .filter(
+                        AuditLog.action == "line_message_processed",
+                        AuditLog.resource_type == "message",
+                        AuditLog.resource_id == reply_token,
+                    )
+                    .first()
+                )
+                if existing_log:
+                    logger.info(
+                        "⏭️ 該 replyToken 已記錄處理成功（line_message_processed），跳過重複事件"
+                    )
+                    continue
+            except Exception as _e:
+                # 去重檢查失敗不影響主流程，避免漏回覆
+                logger.warning(f"⚠️ 去重檢查失敗：{_e}（將繼續處理以避免漏回覆）")
 
             try:
                 # 正確的多租戶邏輯：根據 Channel Token 識別公司
@@ -235,6 +347,12 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                 )
                 logger.info(f"💡 生成答案: '{answer[:100]}...' (長度: {len(answer)})")
 
+                # 進行客服口吻重寫（失敗則回退原文）
+                polished = await rewrite_to_cs_tone(user_text, answer)
+                logger.info(
+                    f"🪄 重寫後答案: '{polished[:100]}...' (長度: {len(polished)})"
+                )
+
                 # 記錄審計日誌
                 await user_service.log_audit(
                     company_id=company_id,
@@ -253,7 +371,7 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                 }
                 payload = {
                     "replyToken": reply_token,
-                    "messages": [{"type": "text", "text": answer}],
+                    "messages": [{"type": "text", "text": polished}],
                 }
 
                 async with httpx.AsyncClient() as client:
