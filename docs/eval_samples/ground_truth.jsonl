@@ -1,9 +1,0 @@
-{"id":"q1","type":"chart","question":"Q: 2023 年收益趨勢為何？","answer_keywords":["上升","成長"],"source_ids":["p3_fig1"],"notes":"關鍵詞近似趨勢"}
-{"id":"q2","type":"table","question":"Q: 產品 A 的單價是多少？","answer_keywords":["$","100","NT"],"source_ids":["p5_tbl1"],"notes":"可用幣別或數字命中"}
-{"id":"q3","type":"caption","question":"Q: 圖 2 的主旨為何？","answer_keywords":["市場份額","對比"],"source_ids":["p3_fig2","p3"],"notes":"需同時引用圖與頁面"}
-{"id":"q4","type":"text","question":"Q: 專案的三個關鍵模組是什麼？","answer_keywords":["解析","索引","檢索"],"source_ids":["p2"],"notes":"文本型題"}
-{"id":"q5","type":"chart","question":"Q: 2022-2024 的成本變化？","answer_keywords":["下降","降低"],"source_ids":["p4_fig3"],"notes":"趨勢型關鍵詞"}
-{"id":"q6","type":"table","question":"Q: 表 1 中 B 欄的數值是多少？","answer_keywords":["B","45"],"source_ids":["p5_tbl1"],"notes":"表格定位 + 值"}
-{"id":"q7","type":"caption","question":"Q: 表 2 的圖說重點有哪些？","answer_keywords":["誤差範圍","樣本數"],"source_ids":["p6_tbl2","p6"],"notes":"需同時命中 caption 要點"}
-{"id":"q8","type":"text","question":"Q: 文件中建議的資料管線組成？","answer_keywords":["MinerU","LightRAG","reranker"],"source_ids":["p7"],"notes":"文本 + 名詞命中"}
-
