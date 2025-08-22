@@ -4,6 +4,7 @@ Neo4j 知識圖譜服務
 """
 
 import os
+import json
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from neo4j import GraphDatabase, AsyncGraphDatabase
@@ -67,14 +68,12 @@ class Neo4jService:
     async def create_indexes_and_constraints(self):
         """建立索引和約束"""
         async with self.driver.session() as session:
-            # 建立唯一約束和索引
+            # 建立唯一約束和索引（社群版相容）
             constraints_and_indexes = [
                 # 實體約束
                 "CREATE CONSTRAINT entity_id_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE",
-                "CREATE CONSTRAINT entity_company_id IF NOT EXISTS FOR (e:Entity) REQUIRE e.company_id IS NOT NULL",
                 # 文檔約束
                 "CREATE CONSTRAINT document_id_unique IF NOT EXISTS FOR (d:Document) REQUIRE d.id IS UNIQUE",
-                "CREATE CONSTRAINT document_company_id IF NOT EXISTS FOR (d:Document) REQUIRE d.company_id IS NOT NULL",
                 # 索引
                 "CREATE INDEX entity_name_index IF NOT EXISTS FOR (e:Entity) ON (e.name)",
                 "CREATE INDEX entity_type_index IF NOT EXISTS FOR (e:Entity) ON (e.type)",
@@ -171,7 +170,7 @@ class Neo4jService:
                 d.file_path = $file_path,
                 d.file_type = $file_type,
                 d.file_size = $file_size,
-                d.metadata = $metadata,
+                d.metadata_json = $metadata_json,
                 d.created_at = datetime(),
                 d.updated_at = datetime()
             RETURN d.id as document_id
@@ -186,7 +185,7 @@ class Neo4jService:
                     "file_path": document_data.get("file_path"),
                     "file_type": document_data.get("file_type"),
                     "file_size": document_data.get("file_size", 0),
-                    "metadata": document_data.get("metadata", {}),
+                    "metadata_json": json.dumps(document_data.get("metadata", {})),
                 },
             )
 

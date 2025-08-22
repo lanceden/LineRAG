@@ -35,6 +35,12 @@ class DocumentMetadata(Base):
         index=True,
         comment="RAG系統中的文檔ID",
     )
+    lightrag_doc_id = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="LightRAG 內部文檔 ID (用於精確刪除)",
+    )
     original_filename = Column(String(500), nullable=False, comment="原始檔名")
     file_path = Column(Text, comment="檔案路徑")
     file_size = Column(BigInteger, comment="檔案大小(bytes)")

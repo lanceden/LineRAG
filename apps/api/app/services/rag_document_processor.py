@@ -89,6 +89,9 @@ class DocumentProcessor:
                     print(f"   重試次數: {retry_count}")
                     print("=" * 80)
 
+                    # 獲取 LightRAG doc_id
+                    lightrag_doc_id = getattr(self, '_last_processed_doc_id', None)
+                    
                     return {
                         "status": "success",
                         "message": f"Document processed successfully for company {company_id}",
@@ -97,6 +100,7 @@ class DocumentProcessor:
                         "retry_count": retry_count,
                         "output_dir": str(company_output_dir),
                         "processing_verified": processing_success,
+                        "lightrag_doc_id": lightrag_doc_id,
                     }
 
             except Exception as e:
@@ -207,13 +211,10 @@ class DocumentProcessor:
             # 使用異步命名空間上下文管理器
             async with AsyncNamespaceContext(int(company_id)) as company_workspace:
 
-                # 1. 刪除向量數據
-                await self._delete_document_vectors(document_id, company_workspace)
+                # 1. 使用 LightRAG 的 delete_by_doc_id 功能刪除文檔
+                await self._delete_document_by_lightrag_id(document_id, company_id)
 
-                # 2. 刪除知識圖譜數據
-                await self._delete_document_graph_data(document_id, company_workspace)
-
-                # 3. 刪除輸出文件
+                # 2. 刪除輸出文件
                 await self._delete_document_files(document_id, company_id)
 
                 print(f"✅ 文檔刪除完成: {document_id}")
@@ -300,6 +301,42 @@ class DocumentProcessor:
             except Exception as process_error:
                 print(f"❌ RAG-Anything 文檔處理失敗: {process_error}")
                 raise process_error
+
+            print(f"✅ RAG-Anything 文檔處理和插入完成")
+            
+            # 嘗試獲取 LightRAG 的 doc_id
+            lightrag_doc_id = None
+            try:
+                # 從 kv_store_doc_status.json 中獲取最新的 doc_id
+                working_dir = self.config.working_dir
+                doc_status_path = Path(working_dir) / "kv_store_doc_status.json"
+                
+                if doc_status_path.exists():
+                    import json
+                    with open(doc_status_path, 'r', encoding='utf-8') as f:
+                        doc_status_data = json.load(f)
+                    
+                    # 找到最新的 doc_id (根據 created_at 時間戳)
+                    if doc_status_data:
+                        latest_doc = None
+                        latest_time = None
+                        
+                        for doc_id, doc_info in doc_status_data.items():
+                            if doc_info.get('created_at'):
+                                if latest_time is None or doc_info['created_at'] > latest_time:
+                                    latest_time = doc_info['created_at']
+                                    latest_doc = doc_id
+                        
+                        if latest_doc:
+                            lightrag_doc_id = latest_doc
+                            print(f"📄 從 doc_status 獲取到最新的 LightRAG doc_id: {lightrag_doc_id}")
+                            print(f"   對應文件: {doc_status_data[latest_doc].get('file_path', 'unknown')}")
+                            
+                            # 存儲到類變量中，供上層調用獲取
+                            self._last_processed_doc_id = lightrag_doc_id
+                
+            except Exception as doc_id_error:
+                print(f"⚠️  獲取 LightRAG doc_id 失敗: {doc_id_error}")
 
             print(f"✅ RAG-Anything 文檔處理和插入完成")
 
@@ -591,6 +628,67 @@ class DocumentProcessor:
                 return True
 
         return False
+
+    async def _delete_document_by_lightrag_id(self, document_id: str, company_id: str):
+        """使用 LightRAG 的 delete_by_doc_id 功能刪除文檔 (企業級做法)"""
+        try:
+            print(f"🔄 使用 LightRAG delete_by_doc_id 刪除文檔...")
+            
+            # 獲取公司的 RAG 實例
+            rag_instance = await self.rag_service.get_rag_instance_for_company(company_id)
+            
+            # 從資料庫獲取已存儲的 LightRAG doc_id
+            from app.core.database import SessionLocal
+            db = SessionLocal()
+            
+            try:
+                from app.models.document import DocumentMetadata
+                document_record = db.query(DocumentMetadata).filter(
+                    DocumentMetadata.document_id == document_id,
+                    DocumentMetadata.company_id == int(company_id)
+                ).first()
+                
+                if not document_record:
+                    print(f"⚠️  未找到文檔記錄: {document_id}")
+                    return
+                
+                # 優先使用數據庫中存儲的 LightRAG doc_id
+                lightrag_doc_id = document_record.lightrag_doc_id
+                
+                if not lightrag_doc_id:
+                    print(f"⚠️  數據庫中沒有 LightRAG doc_id，嘗試計算...")
+                    # 降級方案：計算 LightRAG doc_id
+                    if document_record.file_path and Path(document_record.file_path).exists():
+                        try:
+                            with open(document_record.file_path, 'r', encoding='utf-8') as f:
+                                file_content = f.read().strip()
+                            
+                            from lightrag.utils import compute_mdhash_id
+                            lightrag_doc_id = compute_mdhash_id(file_content, prefix="doc-")
+                            print(f"🔢 計算出的 LightRAG doc_id: {lightrag_doc_id}")
+                        except Exception as calc_error:
+                            print(f"❌ 計算 LightRAG doc_id 失敗: {calc_error}")
+                            return
+                    else:
+                        print(f"⚠️  文檔文件不存在，無法計算 doc_id: {document_record.file_path}")
+                        return
+                
+                # 使用 LightRAG 的 delete_by_doc_id 功能
+                if lightrag_doc_id:
+                    print(f"📄 使用 LightRAG doc_id 刪除: {lightrag_doc_id}")
+                    try:
+                        await rag_instance.delete_by_doc_id(lightrag_doc_id)
+                        print(f"✅ LightRAG 文檔刪除成功")
+                    except Exception as delete_error:
+                        print(f"⚠️  LightRAG 刪除失敗: {delete_error}")
+                        # 記錄錯誤但不阻斷流程
+                        
+            finally:
+                db.close()
+                
+        except Exception as e:
+            print(f"❌ 使用 LightRAG 刪除文檔失敗: {e}")
+            # 企業級做法：記錄錯誤但不阻斷清理流程
 
     def _create_error_response(self, file_path: str, message: str) -> Dict[str, Any]:
         """創建錯誤回應"""

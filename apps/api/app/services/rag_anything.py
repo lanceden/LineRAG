@@ -58,7 +58,7 @@ class RAGAnythingService:
         self.initialized = False
         self.company_id = company_id
 
-        # 實例緩存 - 避免重複創建，但在初始化時清空避免舊狀態
+        # 實例緩存 - 避免重複創建 RAG 實例，提升查詢性能
         self.rag_instance_cache = {}
 
         print(f"🏗️ RAG-Anything 服務初始化中... (公司 ID: {company_id})")
@@ -68,9 +68,8 @@ class RAGAnythingService:
         try:
             print("🚀 初始化 RAG-Anything 服務...")
 
-            # 清空舊的緩存，防止舊狀態干擾
-            self.rag_instance_cache.clear()
-            print("🧹 清空 RAG 實例緩存")
+            # 保留緩存以提升性能，除非強制重置
+            print("📦 保留 RAG 實例緩存以提升查詢性能")
 
             # 設置環境變數（如果有 company_id）
             if company_id:

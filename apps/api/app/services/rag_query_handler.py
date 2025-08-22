@@ -76,8 +76,14 @@ class QueryHandler:
                 # 執行查詢
                 print(f"🚀 執行 RAG 查詢...")
                 t2 = time.time()
+                
+                # 支援環境變數覆蓋查詢模式，提升性能測試靈活性
+                import os
+                effective_mode = os.getenv("RAG_QUERY_MODE", mode)
+                print(f"🔧 使用查詢模式: {effective_mode} (原始: {mode})")
+                
                 result = await rag_instance.aquery(
-                    query, mode=mode, enable_rerank=False
+                    query, mode=effective_mode, enable_rerank=False
                 )
                 print(f"⏱️ aquery 耗時: {time.time() - t2:.2f}s")
 
@@ -93,9 +99,14 @@ class QueryHandler:
                 rag_instance = await self.rag_service.get_rag_instance_for_company(
                     "default"
                 )
+                # 支援環境變數覆蓋查詢模式
+                import os
+                effective_mode = os.getenv("RAG_QUERY_MODE", mode)
+                print(f"🔧 使用查詢模式: {effective_mode} (原始: {mode})")
+                
                 # 啟用重排序功能以提升結果質量
                 result = await rag_instance.aquery(
-                    query, mode=mode, enable_rerank=False
+                    query, mode=effective_mode, enable_rerank=False
                 )
                 print(f"✅ RAG 查詢完成")
                 return result

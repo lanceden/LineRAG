@@ -71,6 +71,29 @@ async def process_document_task(
             # 更新文檔狀態為完成
             if document:
                 document.processing_status = "completed"
+                
+                # 計算並存儲 LightRAG doc_id (企業級做法)
+                # 注意：需要從 RAG 處理結果中獲取實際的 doc_id
+                try:
+                    # 方法1：從處理結果中獲取 doc_id
+                    if "lightrag_doc_id" in result:
+                        lightrag_doc_id = result["lightrag_doc_id"]
+                        document.lightrag_doc_id = lightrag_doc_id
+                        print(f"💾 從處理結果獲取並存儲 LightRAG doc_id: {lightrag_doc_id}")
+                    else:
+                        print(f"⚠️  處理結果中沒有 lightrag_doc_id，嘗試其他方法...")
+                        # 方法2：從 LightRAG 實例中查詢最新的 doc_id
+                        lightrag_doc_id = await rag_service.get_latest_doc_id()
+                        if lightrag_doc_id:
+                            document.lightrag_doc_id = lightrag_doc_id
+                            print(f"💾 從 RAG 實例獲取並存儲 LightRAG doc_id: {lightrag_doc_id}")
+                        else:
+                            print(f"⚠️  無法獲取 LightRAG doc_id")
+                
+                except Exception as e:
+                    print(f"⚠️  計算 LightRAG doc_id 失敗: {e}")
+                    # 不影響主流程
+                
                 db.commit()
 
                 # 建立知識圖譜
