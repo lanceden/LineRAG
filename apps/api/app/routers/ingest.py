@@ -20,6 +20,7 @@ from fastapi import (
     Request,
 )
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.core.database import get_db
 from app.core.middleware import get_current_user
@@ -35,118 +36,140 @@ router = APIRouter(prefix="", tags=["ingest"])
 async def process_document_task(
     task_id: str, file_path: str, company_id: int, uploaded_by: int
 ):
-    """背景任務：處理文檔"""
-    print(f"🚀 開始處理文檔背景任務: {task_id}")
+    """原子性文檔處理任務 - 要麼全成功，要麼全失敗"""
+    print(f"🚀 開始原子性文檔處理: {task_id}")
 
     # 創建新的資料庫 Session 用於背景任務
     from app.core.database import SessionLocal
 
     db = SessionLocal()
+    document = None
+    rag_service = None
 
     try:
-        # 更新文檔狀態為處理中
+        # 第1步：獲取文檔記錄並標記為處理中
         document = (
             db.query(DocumentMetadata)
             .filter(DocumentMetadata.document_id == task_id)
             .first()
         )
 
-        if document:
-            document.processing_status = "processing"
-            db.commit()
-            print(f"📝 文檔狀態已更新為處理中: {task_id}")
+        if not document:
+            raise Exception(f"文檔記錄不存在: {task_id}")
 
-        # 獲取多租戶 RAG 服務
-        print(f"🔧 獲取 RAG 服務...")
+        document.processing_status = "processing"
+        db.commit()
+        print(f"✅ 步驟1：文檔狀態已更新為處理中")
+
+        # 第2步：獲取 RAG 服務
         multitenant_rag = get_multitenant_rag_service()
         rag_service = await multitenant_rag.get_company_rag_service(company_id, db)
-        print(f"✅ RAG 服務獲取成功")
+        print(f"✅ 步驟2：RAG 服務獲取成功")
 
-        # 使用 RAG-Anything 處理文檔
-        print(f"📄 開始處理文檔: {file_path}")
-        result = await rag_service.process_document(file_path, str(company_id))
-        print(f"📄 文檔處理結果: {result.get('status', 'unknown')}")
+        # 第3步：處理文檔並強制要求 lightrag_doc_id（避免 MinerU 阻塞）
+        print(f"📄 步驟3：開始異步處理文檔 {file_path}")
+        result = await multitenant_rag.process_document_async(company_id, file_path, db)
+        
+        # 驗證處理結果的完整性
+        if result["status"] != "success":
+            raise Exception(f"文檔處理失敗: {result.get('message', 'Unknown error')}")
+        
+        # 強制要求必須有 lightrag_doc_id
+        lightrag_doc_id = result.get("lightrag_doc_id")
+        if not lightrag_doc_id:
+            raise Exception("文檔處理成功但缺少 lightrag_doc_id，處理不完整")
+        
+        print(f"✅ 步驟3：文檔處理成功，lightrag_doc_id: {lightrag_doc_id}")
 
-        if result["status"] == "success":
-            # 更新文檔狀態為完成
-            if document:
-                document.processing_status = "completed"
+        # 第4步：原子性更新資料庫
+        try:
+            document.processing_status = "completed"
+            document.lightrag_doc_id = lightrag_doc_id
+            document.processed_at = func.now()
+            
+            # 更新文檔統計資訊
+            document.file_size = result.get("file_size", document.file_size)
+            
+            db.commit()
+            print(f"✅ 步驟4：資料庫更新成功")
+            
+        except Exception as db_error:
+            db.rollback()
+            raise Exception(f"資料庫更新失敗: {db_error}")
+
+        # 第5步：建立知識圖譜（可選，失敗不影響主流程）
+        try:
+            if hasattr(rag_service, 'create_knowledge_graph_from_document'):
+                graph_result = await rag_service.create_knowledge_graph_from_document(
+                    file_path=file_path,
+                    company_id=company_id,
+                    document_metadata={
+                        "id": document.id,
+                        "filename": document.original_filename,
+                        "file_path": file_path,
+                        "file_type": document.mime_type,
+                        "file_size": document.file_size,
+                    },
+                )
                 
-                # 計算並存儲 LightRAG doc_id (企業級做法)
-                # 注意：需要從 RAG 處理結果中獲取實際的 doc_id
-                try:
-                    # 方法1：從處理結果中獲取 doc_id
-                    if "lightrag_doc_id" in result:
-                        lightrag_doc_id = result["lightrag_doc_id"]
-                        document.lightrag_doc_id = lightrag_doc_id
-                        print(f"💾 從處理結果獲取並存儲 LightRAG doc_id: {lightrag_doc_id}")
-                    else:
-                        print(f"⚠️  處理結果中沒有 lightrag_doc_id，嘗試其他方法...")
-                        # 方法2：從 LightRAG 實例中查詢最新的 doc_id
-                        lightrag_doc_id = await rag_service.get_latest_doc_id()
-                        if lightrag_doc_id:
-                            document.lightrag_doc_id = lightrag_doc_id
-                            print(f"💾 從 RAG 實例獲取並存儲 LightRAG doc_id: {lightrag_doc_id}")
-                        else:
-                            print(f"⚠️  無法獲取 LightRAG doc_id")
+                if graph_result["status"] == "success":
+                    document.metadata = document.metadata or {}
+                    document.metadata.update({"knowledge_graph": graph_result})
+                    db.commit()
+                    print(f"✅ 步驟5：知識圖譜建構成功")
                 
-                except Exception as e:
-                    print(f"⚠️  計算 LightRAG doc_id 失敗: {e}")
-                    # 不影響主流程
-                
-                db.commit()
+        except Exception as e:
+            print(f"⚠️ 步驟5：知識圖譜建構失敗（不影響主流程）: {e}")
 
-                # 建立知識圖譜
-                try:
-                    graph_result = (
-                        await rag_service.create_knowledge_graph_from_document(
-                            file_path=file_path,
-                            company_id=company_id,
-                            document_metadata={
-                                "id": document.id,
-                                "filename": document.original_filename,
-                                "file_path": file_path,
-                                "file_type": document.mime_type,
-                                "file_size": document.file_size,
-                            },
-                        )
-                    )
-
-                    # 更新文檔元資料包含圖譜資訊
-                    if graph_result["status"] == "success":
-                        document.metadata.update({"knowledge_graph": graph_result})
-                        db.commit()
-
-                except Exception as e:
-                    # 圖譜建構失敗不影響文檔處理
-                    print(f"Knowledge graph creation failed: {e}")
-        else:
-            # 更新文檔狀態為失敗
-            if document:
-                document.processing_status = "failed"
-                document.error_message = result["message"]
-                db.commit()
+        print(f"🎉 文檔處理全部完成: {task_id}")
 
     except Exception as e:
-        print(f"❌ 背景任務處理失敗: {task_id}, 錯誤: {str(e)}")
-        import traceback
-
-        print(f"📋 錯誤詳情: {traceback.format_exc()}")
-
-        # 更新文檔狀態為失敗
+        print(f"❌ 文檔處理失敗，開始回滾: {task_id}")
+        print(f"   錯誤: {str(e)}")
+        
+        # 回滾操作
         try:
-            document = (
-                db.query(DocumentMetadata)
-                .filter(DocumentMetadata.document_id == task_id)
-                .first()
-            )
+            # 1. 回滾資料庫狀態
             if document:
                 document.processing_status = "failed"
                 document.error_message = str(e)
                 db.commit()
-                print(f"📝 文檔狀態已更新為失敗: {task_id}")
-        except Exception as db_error:
-            print(f"❌ 更新文檔狀態失敗: {str(db_error)}")
+                print(f"✅ 資料庫狀態已回滾為失敗")
+            
+            # 2. 清理 RAG 資料（如果已處理）
+            if multitenant_rag and rag_service:
+                try:
+                    # 使用 document_processor 的刪除方法
+                    await rag_service.delete_document(task_id, str(company_id))
+                    print(f"✅ RAG 資料已清理")
+                except Exception as cleanup_error:
+                    print(f"⚠️ RAG 資料清理失敗: {cleanup_error}")
+                    
+            # 3. 從資料庫中刪除文檔記錄
+            if document:
+                try:
+                    db.delete(document)
+                    db.commit()
+                    print(f"✅ 文檔記錄已從資料庫刪除")
+                except Exception as delete_error:
+                    print(f"⚠️ 刪除文檔記錄失敗: {delete_error}")
+                    db.rollback()
+            
+            # 4. 清理檔案系統（如果需要）
+            try:
+                if os.path.exists(file_path):
+                    # 這裡可以選擇是否刪除原始檔案
+                    # os.remove(file_path)
+                    pass
+            except Exception as file_cleanup_error:
+                print(f"⚠️ 檔案清理警告: {file_cleanup_error}")
+                
+        except Exception as rollback_error:
+            print(f"❌ 回滾操作失敗: {rollback_error}")
+            
+        # 重新拋出原始錯誤
+        raise
+
     finally:
         # 確保資料庫連接被關閉
         try:
@@ -209,7 +232,8 @@ async def ingest_document(
 
     # 保存上傳的文件
     file_path = upload_dir / file.filename
-    print(f"💾 準備保存文件到: {file_path}")
+    abs_file_path = file_path.absolute()  # 轉換為絕對路徑
+    print(f"💾 準備保存文件到: {abs_file_path}")
 
     try:
         print(f"📖 開始讀取文件內容...")
@@ -218,11 +242,27 @@ async def ingest_document(
         print(f"📊 文件大小: {file_size} bytes ({file_size/1024/1024:.2f} MB)")
 
         print(f"💾 開始寫入文件...")
-        with open(file_path, "wb") as f:
+        with open(abs_file_path, "wb") as f:
             f.write(content)
-        print(f"✅ 文件保存成功: {file_path}")
+        
+        # 驗證文件寫入成功
+        if not abs_file_path.exists():
+            raise Exception("文件寫入後驗證失敗，文件不存在")
+        
+        actual_size = abs_file_path.stat().st_size
+        if actual_size != file_size:
+            raise Exception(f"文件大小不匹配，期望: {file_size}, 實際: {actual_size}")
+            
+        print(f"✅ 文件保存並驗證成功: {abs_file_path}")
+        
     except Exception as e:
         print(f"❌ 文件保存失敗: {str(e)}")
+        # 清理可能的部分文件
+        try:
+            if abs_file_path.exists():
+                abs_file_path.unlink()
+        except:
+            pass
         raise HTTPException(status_code=500, detail=f"文件保存失敗: {str(e)}")
 
     # 創建文檔記錄
@@ -232,7 +272,7 @@ async def ingest_document(
     document = DocumentMetadata(
         document_id=doc_id,
         original_filename=file.filename,
-        file_path=str(file_path),
+        file_path=str(abs_file_path),  # 使用絕對路徑
         file_size=file_size,
         mime_type=file_extension,
         company_id=company_id,
@@ -254,14 +294,14 @@ async def ingest_document(
     # 啟動背景任務
     print(f"🚀 啟動背景處理任務...")
     print(f"   任務ID: {doc_id}")
-    print(f"   文件路徑: {file_path}")
+    print(f"   文件路徑: {abs_file_path}")
     print(f"   公司ID: {company_id}")
     print(f"   用戶ID: {current_user.id}")
 
     background_tasks.add_task(
         process_document_task,
         doc_id,
-        str(file_path),
+        str(abs_file_path),  # 使用絕對路徑
         company_id,
         current_user.id,
     )
