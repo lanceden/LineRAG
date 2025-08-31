@@ -106,16 +106,27 @@ async def check_neo4j_data(workspace: str) -> bool:
         )
 
         with driver.session() as session:
+            # 先嘗試查詢有workspace屬性的節點
             result = session.run(
                 "MATCH (n) WHERE n.workspace = $workspace RETURN count(n) as node_count",
                 workspace=workspace,
             )
             node_count = result.single()["node_count"]
-            print(f"      🔗 Neo4j 節點數: {node_count}")
+            print(f"      🔗 Neo4j 節點數 (帶workspace): {node_count}")
 
+            # 如果沒有找到帶workspace的節點，檢查是否有任何節點（向後兼容）
             if node_count == 0:
-                print(f"      ⚠️  警告: 命名空間中沒有圖節點")
-                return False
+                result = session.run("MATCH (n) RETURN count(n) as total_count")
+                total_count = result.single()["total_count"]
+                print(f"      🔗 Neo4j 總節點數: {total_count}")
+                
+                if total_count > 0:
+                    print(f"      ⚠️  發現節點但缺少workspace屬性，可能是舊數據")
+                    # 對於向後兼容，我們認為有節點就是有效的
+                    return True
+                else:
+                    print(f"      ⚠️  警告: 命名空間中沒有圖節點")
+                    return False
 
         driver.close()
         return True
@@ -168,11 +179,19 @@ async def has_neo4j_data(workspace: str) -> bool:
         )
 
         with driver.session() as session:
+            # 先嘗試查詢有workspace屬性的節點
             result = session.run(
                 "MATCH (n) WHERE n.workspace = $workspace RETURN count(n) as node_count",
                 workspace=workspace,
             )
             node_count = result.single()["node_count"]
+            
+            # 如果沒有找到帶workspace的節點，檢查是否有任何節點（向後兼容）
+            if node_count == 0:
+                result = session.run("MATCH (n) RETURN count(n) as total_count")
+                total_count = result.single()["total_count"]
+                if total_count > 0:
+                    return True
 
         driver.close()
         return node_count > 0

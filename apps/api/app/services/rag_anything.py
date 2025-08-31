@@ -708,6 +708,19 @@ class RAGAnythingService:
         print("✅ 功能模組初始化完成")
 
     # 文檔處理相關方法
+    async def process_document_with_cache(
+        self, file_path: str, company_id: str
+    ) -> Dict[str, Any]:
+        """檢查文檔快取，如果存在則返回快取結果"""
+        try:
+            # 檢查文件是否存在於解析快取中
+            # 這裡可以添加實際的快取檢查邏輯
+            # 目前簡單返回未命中，讓實際處理繼續進行
+            return {"status": "miss", "message": "Cache miss, need to process"}
+        except Exception as e:
+            print(f"⚠️  快取檢查失敗: {e}")
+            return {"status": "miss", "message": "Cache check failed, need to process"}
+
     async def process_document(
         self, file_path: str, company_id: str, output_dir: str = "./output"
     ) -> Dict[str, Any]:

@@ -5,8 +5,9 @@ RAG-Anything 查詢處理器
 import asyncio
 import os
 import time
-
-from typing import List, Dict, Any
+import hashlib
+from functools import lru_cache
+from typing import List, Dict, Any, Optional
 from .rag_config import RAGConfig
 from .rag_database_manager import DatabaseManager
 from app.utils.namespace import AsyncNamespaceContext
@@ -15,6 +16,10 @@ from app.utils.data_validator import verify_query_data_exists
 # 中文註解：公司級資料健檢結果快取（避免每次打 DB），TTL 預設 10 分鐘
 _CHECK_CACHE_TTL_SECONDS = int(os.getenv("QUERY_CHECK_TTL", "600"))
 _company_check_cache: Dict[int, float] = {}
+
+# 查詢結果快取
+_QUERY_CACHE_TTL_SECONDS = int(os.getenv("QUERY_CACHE_TTL", "300"))  # 5分鐘
+_query_result_cache: Dict[str, Dict[str, Any]] = {}
 
 
 def _should_skip_precheck(company_id: int) -> bool:
@@ -30,6 +35,33 @@ def _mark_precheck(company_id: int):
     _company_check_cache[company_id] = time.time()
 
 
+def _get_query_hash(query: str, company_id: str, mode: str) -> str:
+    """生成查詢雜湊用於快取"""
+    content = f"{query}:{company_id}:{mode}"
+    return hashlib.md5(content.encode()).hexdigest()
+
+
+def _is_cache_valid(cache_entry: Dict[str, Any]) -> bool:
+    """檢查快取是否有效"""
+    if "timestamp" not in cache_entry:
+        return False
+    return (time.time() - cache_entry["timestamp"]) < _QUERY_CACHE_TTL_SECONDS
+
+
+def _cleanup_expired_cache():
+    """清理過期的快取項目"""
+    current_time = time.time()
+    expired_keys = [
+        key
+        for key, entry in _query_result_cache.items()
+        if current_time - entry.get("timestamp", 0) > _QUERY_CACHE_TTL_SECONDS
+    ]
+    for key in expired_keys:
+        del _query_result_cache[key]
+    if expired_keys:
+        print(f"🧹 清理了 {len(expired_keys)} 個過期查詢快取")
+
+
 class QueryHandler:
     """查詢處理器"""
 
@@ -40,81 +72,274 @@ class QueryHandler:
         self.api_call_count = 0
         self.api_error_count = 0
 
+        # 效能監控
+        self.query_stats = {
+            "total_queries": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "avg_response_time": 0.0,
+            "slow_queries": 0,
+        }
+
+    async def query_with_cache(
+        self, query: str, mode: str = "naive", company_id: str = None
+    ) -> str:
+        """帶快取的查詢方法"""
+        start_time = time.time()
+        self.query_stats["total_queries"] += 1
+
+        # 生成查詢雜湊
+        query_hash = _get_query_hash(query, company_id or "", mode)
+
+        # 檢查快取
+        if query_hash in _query_result_cache:
+            cache_entry = _query_result_cache[query_hash]
+            if _is_cache_valid(cache_entry):
+                self.query_stats["cache_hits"] += 1
+                response_time = time.time() - start_time
+                self._update_response_time(response_time)
+                print(f"⚡ 快取命中，節省查詢時間")
+                return cache_entry["result"]
+
+        # 快取未命中，執行實際查詢
+        self.query_stats["cache_misses"] += 1
+        print(f"🔍 快取未命中，執行新查詢")
+
+        result = await self._execute_query(query, mode, company_id)
+
+        # 儲存到快取
+        _query_result_cache[query_hash] = {
+            "result": result,
+            "timestamp": time.time(),
+            "query": query,
+            "mode": mode,
+            "company_id": company_id,
+        }
+
+        # 定期清理過期快取
+        if len(_query_result_cache) > 1000:  # 快取大小限制
+            _cleanup_expired_cache()
+
+        response_time = time.time() - start_time
+        self._update_response_time(response_time)
+
+        if response_time > 5.0:  # 慢查詢閾值
+            self.query_stats["slow_queries"] += 1
+            print(f"🐌 慢查詢警告: {response_time:.2f}s")
+
+        return result
+
+    def _update_response_time(self, response_time: float):
+        """更新平均響應時間"""
+        total_queries = self.query_stats["total_queries"]
+        current_avg = self.query_stats["avg_response_time"]
+        self.query_stats["avg_response_time"] = (
+            (current_avg * (total_queries - 1)) + response_time
+        ) / total_queries
+
+    async def _execute_query(
+        self, query: str, mode: str = "naive", company_id: str = None
+    ) -> str:
+        """實際執行查詢的內部方法"""
+        if company_id:
+            # 驗證資料存在
+            if not _should_skip_precheck(int(company_id)):
+                data_exists = await verify_query_data_exists(int(company_id))
+                if not data_exists:
+                    raise ValueError(f"No data found for company {company_id}")
+                _mark_precheck(int(company_id))
+
+            # 獲取 RAG 實例
+            rag_instance = await self.rag_service.get_rag_instance_for_company(
+                company_id
+            )
+
+            # 確保內容已載入
+            await self._ensure_company_content_loaded(company_id, rag_instance)
+
+            # 執行查詢
+            result = await rag_instance.aquery(query, mode=mode, enable_rerank=False)
+
+            return result
+        else:
+            raise ValueError("Query requires company_id")
+
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """獲取效能統計資訊"""
+        cache_hit_rate = (
+            self.query_stats["cache_hits"]
+            / max(self.query_stats["total_queries"], 1)
+            * 100
+        )
+
+        return {
+            **self.query_stats,
+            "cache_hit_rate": f"{cache_hit_rate:.1f}%",
+            "cache_size": len(_query_result_cache),
+            "active_cache_entries": len(
+                [k for k, v in _query_result_cache.items() if _is_cache_valid(v)]
+            ),
+        }
+
+    async def smart_query_mode(self, query: str) -> str:
+        """智慧選擇查詢模式"""
+        query_lower = query.lower()
+
+        # 簡單查詢用 naive
+        if len(query.split()) < 5:
+            return "naive"
+
+        # 複雜查詢用 hybrid
+        complex_keywords = ["比較", "差異", "如何", "為什麼", "原因", "影響"]
+        if any(keyword in query_lower for keyword in complex_keywords):
+            return "hybrid"
+
+        # 預設用 local
+        return "local"
+
     async def query_text(
         self, query: str, mode: str = "hybrid", company_id: str = None
     ) -> str:
-        """純文本查詢"""
+        """純文本查詢 - 現在使用智慧快取"""
         print("=" * 80)
         print(f"🔍 開始 RAG 文本查詢")
         print(f"   查詢內容: {query}")
-        print(f"   查詢模式: {mode}")
+        print(f"   原始模式: {mode}")
         print(f"   公司ID: {company_id}")
         print("=" * 80)
 
         try:
-            # 直接處理查詢，不使用異步上下文管理器
-            if company_id:
-                t0 = time.time()
-                # 查詢前驗證數據存在（加入公司級快取，預設 10 分鐘）
-                if not _should_skip_precheck(int(company_id)):
-                    data_exists = await verify_query_data_exists(int(company_id))
-                    if not data_exists:
-                        raise ValueError(f"No data found for company {company_id}")
-                    _mark_precheck(int(company_id))
-                    print(f"⏱️ Precheck 耗時: {time.time() - t0:.2f}s")
-                else:
-                    print("⏭️ 跳過資料健檢（公司級快取尚有效）")
-                t1 = time.time()
+            # 使用智慧模式選擇
+            smart_mode = await self.smart_query_mode(query)
+            if smart_mode != mode:
+                print(f"🧠 智慧模式選擇: {mode} → {smart_mode}")
 
-                # 動態獲取當前公司的 RAG-Anything 實例
-                print(f"🔧 為公司 {company_id} 動態創建/取得 RAG 查詢實例...")
-                rag_instance = await self.rag_service.get_rag_instance_for_company(
-                    str(company_id)
-                )
-                print(f"⏱️ 取得查詢實例耗時: {time.time() - t1:.2f}s")
+            # 使用帶快取的查詢
+            result = await self.query_with_cache(query, smart_mode, company_id)
 
-                # 執行查詢
-                print(f"🚀 執行 RAG 查詢...")
-                t2 = time.time()
-                
-                # 支援環境變數覆蓋查詢模式，提升性能測試靈活性
-                import os
-                effective_mode = os.getenv("RAG_QUERY_MODE", mode)
-                print(f"🔧 使用查詢模式: {effective_mode} (原始: {mode})")
-                
-                result = await rag_instance.aquery(
-                    query, mode=effective_mode, enable_rerank=False
-                )
-                print(f"⏱️ aquery 耗時: {time.time() - t2:.2f}s")
+            print(f"✅ RAG 查詢完成")
+            print(f"   最終模式: {smart_mode}")
+            print(f"   結果長度: {len(result)} 字符")
+            print(f"   效能統計: {self.get_performance_stats()}")
+            print("=" * 80)
 
-                print(f"✅ RAG 查詢完成 (總耗時: {time.time() - t0:.2f}s)")
-                print(f"   結果長度: {len(result)} 字符")
-                print(f"   結果預覽: {result[:100]}...")
-                print("=" * 80)
+            return result
 
-                return result
-            else:
-                # 沒有指定公司ID的查詢 - 使用默認實例
-                print(f"🚀 執行 RAG 查詢 (無公司限制)...")
-                rag_instance = await self.rag_service.get_rag_instance_for_company(
-                    "default"
-                )
-                # 支援環境變數覆蓋查詢模式
-                import os
-                effective_mode = os.getenv("RAG_QUERY_MODE", mode)
-                print(f"🔧 使用查詢模式: {effective_mode} (原始: {mode})")
-                
-                # 啟用重排序功能以提升結果質量
-                result = await rag_instance.aquery(
-                    query, mode=effective_mode, enable_rerank=False
-                )
-                print(f"✅ RAG 查詢完成")
-                return result
+        except Exception as e:
+            print(f"❌ RAG 查詢失敗: {str(e)}")
+            print("=" * 80)
+            raise Exception(f"Text query failed: {str(e)}")
 
         except Exception as e:
             print(f"❌ RAG 查詢失敗: {str(e)}")
             print("=" * 80)
             raise Exception(f"Query failed: {str(e)}")
+
+    async def _ensure_company_content_loaded(self, company_id: str, rag_instance):
+        """確保公司所有文檔的 content_list 已載入 RAG (版本檢查機制)"""
+        try:
+            # 檢查 kv_store_parse_cache.json 的修改時間
+            import os
+            import json
+            from pathlib import Path
+
+            cache_file = Path(
+                f"./rag_storage/company_{company_id}/kv_store_parse_cache.json"
+            )
+            if not cache_file.exists():
+                print(f"⚠️ 解析快取檔案不存在: {cache_file}")
+                return
+
+            cache_file_mtime = os.path.getmtime(cache_file)
+
+            # 檢查 RAG 實例是否有記錄最後載入時間
+            if not hasattr(rag_instance, "_last_loaded_time"):
+                rag_instance._last_loaded_time = 0
+                print(f"🔍 首次載入公司 {company_id} 的文檔...")
+            elif cache_file_mtime <= rag_instance._last_loaded_time:
+                print(
+                    f"⏭️ 快取檔案未更新，跳過載入 (快取時間: {cache_file_mtime}, 上次載入: {rag_instance._last_loaded_time})"
+                )
+                return
+            else:
+                print(
+                    f"🔄 檢測到快取檔案更新，重新載入文檔 (快取時間: {cache_file_mtime} > 上次載入: {rag_instance._last_loaded_time})"
+                )
+
+            # 2. 查資料庫取回公司所有的文檔
+            from app.core.database import SessionLocal
+            from app.models.document import DocumentMetadata
+
+            db = SessionLocal()
+            try:
+                company_docs = (
+                    db.query(DocumentMetadata)
+                    .filter(
+                        DocumentMetadata.company_id == int(company_id),
+                        DocumentMetadata.processing_status == "completed",
+                    )
+                    .all()
+                )
+
+                print(f"📊 找到 {len(company_docs)} 個已完成的文檔")
+
+                if not company_docs:
+                    print("⚠️ 公司沒有已完成的文檔")
+                    return
+
+                # 3. 讀取 kv_store_parse_cache.json
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    parse_cache = json.load(f)
+
+                print(f"📄 載入解析快取，共 {len(parse_cache)} 個項目")
+
+                # 4. 對每個文檔執行 insert_content_list
+                loaded_count = 0
+                for doc in company_docs:
+                    lightrag_doc_id = doc.lightrag_doc_id
+                    if not lightrag_doc_id:
+                        continue
+
+                    # 在 parse_cache 中找到對應的 content_list
+                    cache_entry = None
+                    for cache_key, cache_data in parse_cache.items():
+                        if cache_data.get("doc_id") == lightrag_doc_id:
+                            cache_entry = cache_data
+                            break
+
+                    if not cache_entry:
+                        print(f"⚠️ 找不到 {lightrag_doc_id} 的解析快取")
+                        continue
+
+                    content_list = cache_entry.get("content_list", [])
+                    if not content_list:
+                        print(f"⚠️ {doc.original_filename} 的 content_list 為空")
+                        continue
+
+                    print(
+                        f"📝 載入 {doc.original_filename} 的 content_list ({len(content_list)} 項)"
+                    )
+
+                    # 使用 insert_content_list 載入到 RAG
+                    await rag_instance.insert_content_list(
+                        content_list=content_list,
+                        file_path=doc.original_filename,
+                        doc_id=lightrag_doc_id,
+                    )
+                    loaded_count += 1
+
+                # 更新最後載入時間
+                rag_instance._last_loaded_time = cache_file_mtime
+                print(
+                    f"✅ 成功載入 {loaded_count} 個文檔到 RAG (更新時間戳: {cache_file_mtime})"
+                )
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            print(f"⚠️ 載入公司文檔時出錯: {e}")
+            # 不拋出異常，讓查詢繼續進行
 
     async def query_multimodal(
         self,
@@ -144,19 +369,31 @@ class QueryHandler:
                 )
 
                 print(f"🚀 執行多模態 RAG 查詢...")
-                # 啟用重排序功能以提升結果質量
-                result = await rag_instance.aquery_with_multimodal(
-                    query=query, multimodal_content=multimodal_content, mode=mode
+
+                # 將多模態內容整合到查詢中
+                multimodal_text = self._format_multimodal_content(multimodal_content)
+                enhanced_query = f"{query}\n\n多模態內容:\n{multimodal_text}"
+
+                # 強制使用 naive 模式，避免觸發 MinerU
+                safe_mode = "naive"
+                print(f"🔧 使用安全查詢模式: {safe_mode} (避免觸發 MinerU)")
+
+                # 創建查詢參數
+                from lightrag import QueryParam
+
+                query_param = QueryParam(
+                    mode=safe_mode,
+                    response_type="Multiple Paragraphs",
+                    top_k=10,
+                    enable_rerank=False,
+                )
+
+                result = await rag_instance.aquery(
+                    query=enhanced_query, param=query_param
                 )
             else:
-                # 沒有指定公司ID的查詢
-                rag_instance = await self.rag_service.get_rag_instance_for_company(
-                    "default"
-                )
-                print(f"🚀 執行多模態 RAG 查詢 (無公司限制)...")
-                result = await rag_instance.aquery_with_multimodal(
-                    query=query, multimodal_content=multimodal_content, mode=mode
-                )
+                # 多模態查詢必須有公司ID，不允許無公司限制的查詢
+                raise ValueError("Multimodal query requires company_id")
 
             print(f"✅ 多模態 RAG 查詢完成")
             print(f"   結果長度: {len(result)} 字符")
@@ -301,3 +538,30 @@ class QueryHandler:
 
         error_lower = error_msg.lower()
         return any(err in error_lower for err in retryable_errors)
+
+    def _format_multimodal_content(self, multimodal_content: List[Dict]) -> str:
+        """格式化多模態內容為文本"""
+        formatted_parts = []
+
+        for i, content in enumerate(multimodal_content):
+            content_type = content.get("type", "unknown")
+
+            if content_type == "image":
+                # 圖片內容 - 包含描述和base64數據
+                description = content.get("description", "圖片內容")
+                base64_data = content.get("data", "")
+                formatted_parts.append(f"[圖片 {i+1}] {description}")
+                if base64_data:
+                    formatted_parts.append(f"Base64數據長度: {len(base64_data)} 字符")
+
+            elif content_type == "text":
+                # 文本內容
+                text_data = content.get("data", "")
+                formatted_parts.append(f"[文本 {i+1}] {text_data}")
+
+            else:
+                # 其他類型
+                data = content.get("data", "")
+                formatted_parts.append(f"[{content_type} {i+1}] {str(data)}")
+
+        return "\n".join(formatted_parts)

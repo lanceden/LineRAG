@@ -3,8 +3,9 @@ import hashlib
 import base64
 import os
 import logging
+import time
 from pathlib import Path
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException, Depends, BackgroundTasks
 import httpx
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
@@ -53,9 +54,17 @@ def looks_structured(text: str) -> bool:
 
 
 async def rewrite_to_cs_tone(user_query: str, rag_answer: str) -> str:
+    # 快速檢查：如果答案很短或包含特定關鍵字，直接返回（避免不必要的 API 調用）
+    if len(rag_answer.strip()) < 50 or any(
+        keyword in rag_answer.lower()
+        for keyword in ["對不起", "抱歉", "錯誤", "無法", "沒有找到", "系統錯誤"]
+    ):
+        logger.info("⚡ 跳過重寫：答案太短或包含錯誤訊息")
+        return rag_answer
+
     api_key = os.getenv("OPENAI_API_KEY")
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    model = os.getenv("REWRITE_MODEL", "gpt-4o-mini")
+    model = os.getenv("REWRITE_MODEL", "gpt-3.5-turbo")  # 改用更快的模型
 
     # 若未設定 API Key，直接返回原文
     if not api_key:
@@ -165,10 +174,12 @@ def verify_line_signature_for_company(
 
 
 @router.post("/webhook")
-async def line_webhook(request: Request, db: Session = Depends(get_db)):
+async def line_webhook(
+    request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+):
     """
-    處理來自 LINE 的 Webhook 事件（多租戶版本）。
-    根據 Channel Token 識別公司，使用該公司的 RAG 服務處理訊息。
+    處理來自 LINE 的 Webhook 事件（多租戶 + 多線程版本）。
+    支援文字和圖片訊息，使用背景任務並行處理。
     """
     logger.info("🔔 收到 LINE Webhook 請求")
 
@@ -195,28 +206,38 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
             logger.error(f"❌ 讀取請求體失敗: {e}")
             return "error"
 
-    # 取得多租戶服務
-    multitenant_rag_service = get_multitenant_rag_service()
-    user_service = get_multitenant_user_service(db)
+    # 不在這裡取得服務，改在背景處理函數中取得
+    # 避免重複取得和不必要的資源佔用
 
     for i, event in enumerate(events):
         logger.info(f"🔄 處理事件 {i+1}/{len(events)}: {event.get('type', 'unknown')}")
 
-        if (
-            event.get("type") == "message"
-            and event.get("message", {}).get("type") == "text"
-        ):
-            user_text = event["message"]["text"]
+        if event.get("type") == "message" and event.get("message", {}).get("type") in [
+            "text",
+            "image",
+        ]:
+            message = event["message"]
+            message_type = message["type"]
             reply_token = event["replyToken"]
             line_user_id = event["source"]["userId"]
 
-            logger.info(f"💬 收到文字訊息: '{user_text}' from {line_user_id}")
+            if message_type == "text":
+                user_text = message["text"]
+                user_images = None
+                logger.info(f"💬 收到文字訊息: '{user_text}' from {line_user_id}")
+            elif message_type == "image":
+                user_text = "用戶上傳了圖片，請分析圖片內容"  # 默認查詢文字
+                image_id = message["id"]
+                user_images = [{"image_id": image_id}]  # 準備圖片數據
+                logger.info(f"🖼️ 收到圖片訊息: image_id={image_id} from {line_user_id}")
+
             logger.info(f"🎫 Reply Token: {reply_token}")
 
-            # 去重保險 1：忽略 LINE 平台重送事件（isRedelivery=True 代表同一事件重送）
-            if event.get("deliveryContext", {}).get("isRedelivery"):
-                logger.info("⏭️ 檢測到 isRedelivery=True，忽略重送事件以避免重複回覆")
-                continue
+            # 去重保險 1：檢查 LINE 平台重送事件，但允許正常重送處理
+            is_redelivery = event.get("deliveryContext", {}).get("isRedelivery", False)
+            if is_redelivery:
+                logger.info("ℹ️ 檢測到 isRedelivery=True，這是 LINE 的重送機制")
+                # 不直接跳過，讓後續的 replyToken 去重處理
 
             # 去重保險 2：以 replyToken 做去重，若已處理成功則跳過
             try:
@@ -241,164 +262,232 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                 # 去重檢查失敗不影響主流程，避免漏回覆
                 logger.warning(f"⚠️ 去重檢查失敗：{_e}（將繼續處理以避免漏回覆）")
 
-            try:
-                # 正確的多租戶邏輯：根據 Channel Token 識別公司
-                # 從環境變數獲取當前的 Channel Token
-                line_access_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+            # 將處理邏輯移到背景任務，實現多線程並行處理
+            background_tasks.add_task(
+                process_line_message_async,
+                event,
+                raw_body,
+                signature,
+                user_text,
+                user_images,
+                reply_token,
+                line_user_id,
+            )
 
-                if not line_access_token:
-                    logger.error("❌ LINE_CHANNEL_ACCESS_TOKEN 環境變數未設定")
-                    continue
+        else:
+            logger.info(f"⏭️ 跳過非文字/圖片訊息事件: {event.get('type', 'unknown')}")
 
-                # 根據 Channel Token 找到對應的公司
+    logger.info("🏁 Webhook 處理完成 (已加入背景處理隊列)")
+    return "ok"
+
+
+async def process_line_message_async(
+    event: dict,
+    raw_body: bytes,
+    signature: str,
+    user_text: str,
+    user_images: list,
+    reply_token: str,
+    line_user_id: str,
+):
+    """背景處理 LINE 訊息 - 支援圖片 + 多線程並行處理"""
+
+    try:
+        # 重新建立資料庫連接（BackgroundTasks 需要）
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+
+        try:
+            # 取得多租戶服務
+            multitenant_rag_service = get_multitenant_rag_service()
+            user_service = get_multitenant_user_service(db)
+
+            # 多租戶邏輯：根據 LINE User ID 找到對應的公司
+            logger.info(f"🔍 根據 LINE User ID 查找公司: {line_user_id}")
+
+            # 先嘗試從已存在的用戶記錄中找到公司
+            from app.models.tenant_user import TenantUser
+
+            existing_user = (
+                db.query(TenantUser).filter(TenantUser.line_id == line_user_id).first()
+            )
+
+            company = None
+            line_access_token = None
+
+            if existing_user:
+                # 從現有用戶記錄獲取公司
                 company = (
                     db.query(Company)
                     .filter(
-                        Company.line_channel_token == line_access_token,
+                        Company.id == existing_user.company_id,
                         Company.is_active == True,
                         Company.line_bot_enabled == True,
                     )
                     .first()
                 )
-
-                if not company:
-                    logger.error(
-                        f"❌ 找不到對應的公司，Channel Token: {line_access_token[:20]}..."
-                    )
-                    continue
-
-                logger.info(f"✅ 識別到公司: {company.name} (ID: {company.id})")
-
-                # 使用該公司的 Channel Secret 驗證簽名
-                if not verify_line_signature_for_company(
-                    raw_body, signature, company.line_channel_secret
-                ):
-                    logger.error(f"❌ LINE 簽名驗證失敗，公司: {company.name}")
-                    continue
-
-                logger.info(
-                    f"✅ LINE 簽名驗證成功，公司: {company.name}"
-                )  # 找不到匹配的公司或簽名驗證失敗
-
-                company_id = company.id
-                line_access_token = company.line_channel_token
-
-                # 取得或建立用戶
-                user = await user_service.get_user_by_line_id(line_user_id, company_id)
-                if not user:
-                    # 自動註冊新用戶
-                    user = await user_service.create_user(
-                        company_id=company_id,
-                        line_id=line_user_id,
-                        name=f"LINE用戶_{line_user_id[-6:]}",
-                        role="user",
-                    )
-
-                # 取得該公司的 RAG 服務
-                logger.info(f"🤖 取得公司 {company.name} 的 RAG 服務")
-                company_rag_service = (
-                    await multitenant_rag_service.get_company_rag_service(
-                        company_id, db
-                    )
-                )
-
-                # 使用公司的 RAG 服務生成答案
-                logger.info(f"🔍 開始處理問題: '{user_text}'")
-
-                # 添加調試：檢查 RAG 系統狀態
-                try:
-                    # 檢查 RAG 系統是否已初始化
+                if company:
+                    line_access_token = company.line_channel_token
                     logger.info(
-                        f"🔧 RAG 系統初始化狀態: {company_rag_service.initialized}"
+                        f"✅ 從現有用戶找到公司: {company.name} (ID: {company.id})"
                     )
 
-                    # 檢查公司專用工作目錄
-                    if (
-                        hasattr(company_rag_service, "company_working_dir")
-                        and company_rag_service.company_working_dir
+            # 如果沒有找到現有用戶，則遍歷公司進行簽名驗證（新用戶註冊）
+            if not company:
+                logger.info("🔍 用戶不存在，嘗試簽名驗證識別公司")
+                companies = (
+                    db.query(Company)
+                    .filter(
+                        Company.is_active == True,
+                        Company.line_bot_enabled == True,
+                        Company.line_channel_secret.isnot(None),
+                        Company.line_channel_token.isnot(None),
+                    )
+                    .all()
+                )
+
+                for test_company in companies:
+                    if verify_line_signature_for_company(
+                        raw_body,
+                        signature,
+                        test_company.line_channel_secret,
+                        debug=False,
                     ):
-                        working_dir = company_rag_service.company_working_dir
-                        logger.info(f"📁 公司專用工作目錄: {working_dir}")
-                    else:
-                        working_dir = os.getenv("RAG_WORKING_DIR", "./rag_storage")
-                        logger.info(f"📁 預設工作目錄: {working_dir}")
-
-                    # 檢查目錄是否存在及內容
-                    if os.path.exists(working_dir):
-                        files = list(Path(working_dir).rglob("*"))
-                        logger.info(f"📂 工作目錄檔案數量: {len(files)}")
-                        if files:
-                            logger.info(f"📄 部分檔案: {[f.name for f in files[:5]]}")
-                    else:
-                        logger.warning(f"⚠️ 工作目錄不存在: {working_dir}")
-
-                    # 檢查公司 ID
-                    if hasattr(company_rag_service, "company_id"):
+                        company = test_company
+                        line_access_token = test_company.line_channel_token
                         logger.info(
-                            f"🏢 RAG 服務公司 ID: {company_rag_service.company_id}"
+                            f"✅ 透過簽名驗證識別公司: {company.name} (ID: {company.id})"
                         )
+                        break
+            else:
+                # 驗證現有公司的簽名
+                if not verify_line_signature_for_company(
+                    raw_body, signature, company.line_channel_secret, debug=False
+                ):
+                    logger.error(f"❌ 公司 {company.name} 的簽名驗證失敗")
+                    return
 
-                except Exception as e:
-                    logger.warning(f"⚠️ RAG 系統狀態檢查失敗: {e}")
+            if not company:
+                logger.error("❌ 找不到對應的公司")
+                return
 
-                # 使用 RAG-Anything 進行文本查詢
-                answer = await company_rag_service.query_text(
-                    user_text, mode="hybrid", company_id=str(company_id)
-                )
-                logger.info(f"💡 生成答案: '{answer[:100]}...' (長度: {len(answer)})")
+            company_id = company.id
 
-                # 進行客服口吻重寫（失敗則回退原文）
-                polished = await rewrite_to_cs_tone(user_text, answer)
-                logger.info(
-                    f"🪄 重寫後答案: '{polished[:100]}...' (長度: {len(polished)})"
-                )
-
-                # 記錄審計日誌
-                await user_service.log_audit(
+            # 取得或建立用戶
+            user = await user_service.get_user_by_line_id(line_user_id, company_id)
+            if not user:
+                user = await user_service.create_user(
                     company_id=company_id,
-                    user_id=user.id,
-                    action="line_message_processed",
-                    resource_type="message",
-                    resource_id=reply_token,
-                    status="success",
+                    line_id=line_user_id,
+                    name=f"LINE用戶_{line_user_id[-6:]}",
+                    role="user",
                 )
 
-                # 回覆訊息
-                logger.info(f"📤 準備回覆訊息給 LINE 用戶")
-                headers = {
-                    "Authorization": f"Bearer {line_access_token}",
-                    "Content-Type": "application/json",
-                }
-                payload = {
-                    "replyToken": reply_token,
-                    "messages": [{"type": "text", "text": polished}],
-                }
+            # 取得該公司的 RAG 服務
+            company_rag_service = await multitenant_rag_service.get_company_rag_service(
+                company_id, db
+            )
 
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        LINE_REPLY_ENDPOINT, headers=headers, json=payload
+            # 執行查詢（支援圖片）
+            if user_images:
+                # 下載圖片內容
+                multimodal_content = []
+                for img_data in user_images:
+                    try:
+                        image_id = img_data["image_id"]
+                        logger.info(f"📥 開始下載圖片: {image_id}")
+
+                        # 從 LINE 下載圖片
+                        image_url = f"https://api-data.line.me/v2/bot/message/{image_id}/content"
+                        headers = {"Authorization": f"Bearer {line_access_token}"}
+
+                        async with httpx.AsyncClient() as client:
+                            img_response = await client.get(image_url, headers=headers)
+                            if img_response.status_code == 200:
+                                image_data = img_response.content
+                                logger.info(
+                                    f"✅ 成功下載圖片，大小: {len(image_data)} bytes"
+                                )
+
+                                # 轉換為 base64 用於多模態查詢
+                                import base64
+
+                                image_base64 = base64.b64encode(image_data).decode(
+                                    "utf-8"
+                                )
+                                multimodal_content.append(
+                                    {
+                                        "type": "image",
+                                        "data": image_base64,
+                                        "format": "base64",
+                                    }
+                                )
+                            else:
+                                logger.error(
+                                    f"❌ 圖片下載失敗: {img_response.status_code}"
+                                )
+                    except Exception as e:
+                        logger.error(f"❌ 處理圖片時發生錯誤: {e}")
+
+                # 多模態查詢
+                logger.info(f"🔍 開始多模態查詢 (圖片+文字): '{user_text}'")
+                answer = await company_rag_service.query_multimodal(
+                    user_text,
+                    multimodal_content=multimodal_content,
+                    mode="naive",
+                    company_id=str(company_id),
+                )
+            else:
+                # 純文本查詢
+                logger.info(f"🔍 開始文本查詢: '{user_text}'")
+                answer = await company_rag_service.query_text(
+                    user_text, mode="naive", company_id=str(company_id)
+                )
+
+            logger.info(f"💡 生成答案: '{answer[:100]}...' (長度: {len(answer)})")
+
+            # 客服口吻重寫
+            polished = await rewrite_to_cs_tone(user_text, answer)
+
+            # 回覆 LINE 訊息
+            headers = {
+                "Authorization": f"Bearer {line_access_token}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "replyToken": reply_token,
+                "messages": [{"type": "text", "text": polished}],
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    LINE_REPLY_ENDPOINT, headers=headers, json=payload
+                )
+                if response.status_code == 200:
+                    logger.info("✅ 成功回覆 LINE 訊息")
+                else:
+                    logger.error(
+                        f"❌ LINE 回覆失敗: {response.status_code} - {response.text}"
                     )
-                    if response.status_code == 200:
-                        logger.info("✅ 成功回覆 LINE 訊息")
-                    else:
-                        logger.error(
-                            f"❌ LINE 回覆失敗: {response.status_code} - {response.text}"
-                        )
 
-            except Exception as e:
-                logger.error(f"💥 處理 LINE 訊息時發生錯誤: {e}")
-                # 記錄錯誤日誌
-                await user_service.log_audit(
-                    company_id=company_id if "company_id" in locals() else None,
-                    action="line_message_error",
-                    resource_type="message",
-                    resource_id=reply_token,
-                    status="error",
-                    error_message=str(e),
-                )
-                continue
-        else:
-            logger.info(f"⏭️ 跳過非文字訊息事件: {event.get('type', 'unknown')}")
+            # 記錄審計日誌
+            await user_service.log_audit(
+                company_id=company_id,
+                user_id=user.id,
+                action="line_message_processed",
+                resource_type="message",
+                resource_id=reply_token,
+                status="success",
+            )
 
-    logger.info("🏁 Webhook 處理完成")
-    return "ok"
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"💥 背景處理 LINE 訊息時發生錯誤: {e}")
+        try:
+            if "db" in locals():
+                db.close()
+        except:
+            pass

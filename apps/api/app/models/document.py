@@ -57,6 +57,11 @@ class DocumentMetadata(Base):
     processing_time = Column(Integer, comment="處理時間(秒)")
     error_message = Column(Text, comment="錯誤訊息")
 
+    # 進階處理狀態 (方案A 擴充)
+    multimodal_processed = Column(Boolean, default=False, comment="多模態是否完成")
+    content_hash = Column(String(64), index=True, comment="內容雜湊(去重用)")
+    raw_status_json = Column(Text, comment="上游 LightRAG/RAGAnything 原始狀態 JSON")
+
     # 內容統計
     total_pages = Column(Integer, comment="總頁數")
     extracted_text_length = Column(Integer, comment="提取文字長度")

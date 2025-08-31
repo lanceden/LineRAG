@@ -214,8 +214,11 @@ class DocumentProcessor:
                 # 1. 使用 LightRAG 的 delete_by_doc_id 功能刪除文檔
                 await self._delete_document_by_lightrag_id(document_id, company_id)
 
-                # 2. 刪除輸出文件
+                # 2. 刪除輸出文件和 RAG 存儲文件
                 await self._delete_document_files(document_id, company_id)
+                
+                # 3. 檢查是否需要清理整個公司的 RAG 存儲
+                await self._cleanup_company_rag_storage_if_empty(company_id)
 
                 print(f"✅ 文檔刪除完成: {document_id}")
                 print("=" * 80)
@@ -263,7 +266,10 @@ class DocumentProcessor:
 
     async def _process_document_content(self, file_path: str, output_dir: Path):
         """處理文檔內容 - 使用動態創建的 RAG-Anything 實例"""
-        print(f"🔄 處理文檔內容...")
+        import time
+        start_time = time.time()
+        
+        print(f"🔄 處理文檔內容開始... [{time.strftime('%H:%M:%S')}]")
 
         try:
             # 檢查當前命名空間
@@ -276,33 +282,42 @@ class DocumentProcessor:
             )
 
             print(
-                f"   📌 處理時命名空間: Qdrant={current_qdrant}, Neo4j={current_neo4j}"
+                f"   📌 處理時命名空間: Qdrant={current_qdrant}, Neo4j={current_neo4j} [{time.strftime('%H:%M:%S')}]"
             )
 
             # 動態獲取當前公司的 RAG-Anything 實例
-            print(f"🔄 為公司 {company_id} 動態創建 RAG-Anything 實例...")
+            print(f"🔄 為公司 {company_id} 動態創建 RAG-Anything 實例... [{time.strftime('%H:%M:%S')}]")
+            instance_start = time.time()
             rag_instance = await self.rag_service.get_rag_instance_for_company(
                 company_id
             )
+            instance_time = time.time() - instance_start
+            print(f"✅ RAG-Anything 實例創建完成 (耗時: {instance_time:.2f}秒) [{time.strftime('%H:%M:%S')}]")
 
             # 使用正確的 RAG-Anything 官方 API 處理文檔
-            print(f"🚀 使用 RAG-Anything 官方 API 處理文檔: {file_path}")
+            print(f"🚀 使用 RAG-Anything 官方 API 處理文檔: {file_path} [{time.strftime('%H:%M:%S')}]")
+            print(f"   📄 文件大小: {os.path.getsize(file_path) / 1024 / 1024:.2f} MB")
 
             try:
                 # 根據官方文檔，使用 process_document_complete 方法
+                process_start = time.time()
+                print(f"🔄 開始 process_document_complete 處理... [{time.strftime('%H:%M:%S')}]")
+                
                 await rag_instance.process_document_complete(
                     file_path=file_path,
                     output_dir=str(output_dir),
                     parse_method="auto",  # 或 "ocr", "txt"
                 )
-
-                print(f"✅ RAG-Anything 文檔處理完成")
+                
+                process_time = time.time() - process_start
+                print(f"✅ RAG-Anything 文檔處理完成 (耗時: {process_time:.2f}秒) [{time.strftime('%H:%M:%S')}]")
 
             except Exception as process_error:
-                print(f"❌ RAG-Anything 文檔處理失敗: {process_error}")
+                print(f"❌ RAG-Anything 文檔處理失敗: {process_error} [{time.strftime('%H:%M:%S')}]")
                 raise process_error
 
-            print(f"✅ RAG-Anything 文檔處理和插入完成")
+            total_time = time.time() - start_time
+            print(f"✅ RAG-Anything 文檔處理和插入完成 (總耗時: {total_time:.2f}秒) [{time.strftime('%H:%M:%S')}]")
             
             # 嘗試獲取 LightRAG 的 doc_id
             lightrag_doc_id = None
@@ -697,3 +712,37 @@ class DocumentProcessor:
             "message": message,
             "file_path": file_path,
         }
+
+    async def _cleanup_company_rag_storage_if_empty(self, company_id: str):
+        """如果公司沒有剩餘文檔，清理整個 RAG 存儲"""
+        try:
+            # 檢查資料庫中是否還有該公司的文檔
+            from app.core.database import SessionLocal
+            from app.models.document import DocumentMetadata
+            
+            db = SessionLocal()
+            try:
+                remaining_docs = db.query(DocumentMetadata).filter(
+                    DocumentMetadata.company_id == int(company_id)
+                ).count()
+                
+                print(f"📊 公司 {company_id} 剩餘文檔數量: {remaining_docs}")
+                
+                if remaining_docs == 0:
+                    # 沒有剩餘文檔，清理整個 RAG 存儲目錄
+                    print(f"🧹 清理公司 {company_id} 的整個 RAG 存儲...")
+                    
+                    rag_storage_dir = Path(f"./rag_storage/company_{company_id}")
+                    if rag_storage_dir.exists():
+                        import shutil
+                        shutil.rmtree(rag_storage_dir)
+                        print(f"✅ 已清理 RAG 存儲目錄: {rag_storage_dir}")
+                    else:
+                        print(f"ℹ️  RAG 存儲目錄不存在: {rag_storage_dir}")
+                        
+            finally:
+                db.close()
+                
+        except Exception as e:
+            print(f"⚠️ 清理 RAG 存儲時出錯: {e}")
+            # 不拋出異常，讓文檔刪除繼續完成

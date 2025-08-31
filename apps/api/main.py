@@ -12,6 +12,10 @@ from app.core.middleware import PermissionMiddleware
 # Services (initialize on startup)
 from app.services.multitenant_rag import get_multitenant_rag_service
 from app.services.rag_anything import get_rag_service
+from app.services.resource_monitor import (
+    start_resource_monitoring,
+    stop_resource_monitoring,
+)
 
 # Routers
 from app.routers.health import router as health_router
@@ -52,6 +56,13 @@ async def lifespan(app: FastAPI):
 
     logger.info("✅ Multi-Tenant RAG service initialized successfully")
 
+    # 啟動資源監控
+    try:
+        await start_resource_monitoring()
+        logger.info("✅ Resource monitoring started successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to start resource monitoring: {e}")
+
     # Initialize RAG-Anything service
     try:
         rag_service = get_rag_service()
@@ -73,6 +84,13 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("🛑 Shutting down LineRAG API...")
     await multitenant_rag_service.cleanup_all_services()
+
+    # 停止資源監控
+    try:
+        await stop_resource_monitoring()
+        logger.info("✅ Resource monitoring stopped successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to stop resource monitoring: {e}")
 
 
 app = FastAPI(
