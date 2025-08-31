@@ -164,8 +164,11 @@ export function DocumentManagementDialog({
   // 刪除文檔
   const handleDeleteDocument = async (document: DocumentMetadata) => {
     try {
-      await documentsApi.delete(document.id)
-      showToastNotification(`文檔 "${document.filename}" 已成功刪除`, "success")
+      await documentsApi.delete(document.company_id, document.document_id)
+      showToastNotification(
+        `文檔 "${document.original_filename}" 已成功刪除`,
+        "success"
+      )
       await loadDocuments()
     } catch (error) {
       console.error("刪除文檔失敗:", error)
@@ -175,10 +178,13 @@ export function DocumentManagementDialog({
 
   // 過濾文檔
   const filteredDocuments = documents.filter((doc) => {
-    const matchesSearch = doc.filename
+    if (!doc || !doc.original_filename || !doc.processing_status) return false
+
+    const matchesSearch = doc.original_filename
       .toLowerCase()
       .includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === "all" || doc.status === statusFilter
+    const matchesStatus =
+      statusFilter === "all" || doc.processing_status === statusFilter
     return matchesSearch && matchesStatus
   })
 
@@ -195,7 +201,7 @@ export function DocumentManagementDialog({
       case "cancelled":
         return <X className="h-4 w-4 text-gray-600" />
       default:
-        return <FileText className="h-4 w-4 text-gray-400" />
+        return <Info className="h-4 w-4 text-purple-600" />
     }
   }
 
@@ -212,7 +218,7 @@ export function DocumentManagementDialog({
       case "cancelled":
         return "bg-gray-100 text-gray-800"
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-purple-100 text-purple-800"
     }
   }
 
@@ -413,23 +419,30 @@ export function DocumentManagementDialog({
                     <div className="space-y-2">
                       {filteredDocuments.map((doc) => (
                         <div
-                          key={doc.id}
+                          key={doc.document_id}
                           className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
                           <div className="flex items-center space-x-3 flex-1">
-                            {getStatusIcon(doc.status)}
+                            {getStatusIcon(doc.processing_status)}
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-900 truncate">
-                                {doc.filename}
+                                {doc.original_filename || "未知檔案"}
                               </p>
                               <div className="flex items-center space-x-4 text-xs text-gray-500">
                                 <span>
-                                  {(doc.file_size / 1024 / 1024).toFixed(2)} MB
+                                  {doc.file_size
+                                    ? (doc.file_size / 1024 / 1024).toFixed(2)
+                                    : "0.00"}{" "}
+                                  MB
                                 </span>
-                                <span>{doc.file_type.toUpperCase()}</span>
                                 <span>
-                                  {new Date(doc.created_at).toLocaleDateString(
-                                    "zh-TW"
-                                  )}
+                                  {(doc.mime_type || "unknown").toUpperCase()}
+                                </span>
+                                <span>
+                                  {doc.created_at
+                                    ? new Date(
+                                        doc.created_at
+                                      ).toLocaleDateString("zh-TW")
+                                    : "未知時間"}
                                 </span>
                               </div>
                               {doc.error_message && (
@@ -440,12 +453,21 @@ export function DocumentManagementDialog({
                             </div>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <Badge className={getStatusColor(doc.status)}>
-                              {doc.status === "completed" && "已完成"}
-                              {doc.status === "processing" && "處理中"}
-                              {doc.status === "queued" && "排隊中"}
-                              {doc.status === "failed" && "失敗"}
-                              {doc.status === "cancelled" && "已取消"}
+                            <Badge
+                              className={getStatusColor(
+                                doc.processing_status || "unknown"
+                              )}>
+                              {doc.processing_status === "completed" &&
+                                "已完成"}
+                              {doc.processing_status === "processing" &&
+                                "處理中"}
+                              {doc.processing_status === "queued" && "排隊中"}
+                              {doc.processing_status === "failed" && "失敗"}
+                              {doc.processing_status === "cancelled" &&
+                                "已取消"}
+                              {(!doc.processing_status ||
+                                doc.processing_status === "unknown") &&
+                                "未知狀態"}
                             </Badge>
                             <Button
                               size="sm"

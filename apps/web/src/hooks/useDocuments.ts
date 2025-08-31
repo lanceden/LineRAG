@@ -5,14 +5,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { documentsApi } from '@/lib/api'
 import type {
-  DocumentMetadata,
   DocumentListParams,
   DocumentListResponse,
   DocumentUploadRequest,
-  DocumentUploadResponse,
   DocumentStatusResponse,
   UploadProgress,
-  BatchOperationRequest,
   DocumentStats,
 } from '@/types/document'
 
@@ -27,12 +24,11 @@ export function useDocuments(params: DocumentListParams) {
   const fetchDocuments = useCallback(async () => {
     setLoading(true)
     setError(null)
-    
+
     try {
       const response = await documentsApi.getCompanyDocuments(params.company_id, {
-        page: params.page,
-        limit: params.limit,
-        status: params.status
+        skip: params.page ? (params.page - 1) * (params.limit || 10) : undefined,
+        limit: params.limit
       })
       setData(response)
     } catch (err) {
@@ -52,11 +48,11 @@ export function useDocuments(params: DocumentListParams) {
 
   return {
     documents: data?.documents || [],
-    total: data?.total || 0,
-    page: data?.page || 1,
-    limit: data?.limit || 20,
-    hasNext: data?.has_next || false,
-    hasPrev: data?.has_prev || false,
+    total: data?.total_count || 0,
+    page: 1, // API doesn't support pagination yet
+    limit: data?.documents?.length || 0,
+    hasNext: false, // API doesn't support pagination yet
+    hasPrev: false, // API doesn't support pagination yet
     loading,
     error,
     refresh,
@@ -101,7 +97,7 @@ export function useDocumentUpload() {
 
           const newProgress = Math.min(current.progress + Math.random() * 10, 90)
           const newUploaded = Math.floor((newProgress / 100) * current.total_bytes)
-          
+
           return new Map(prev.set(fileId, {
             ...current,
             progress: newProgress,
@@ -116,7 +112,7 @@ export function useDocumentUpload() {
       if (request.category) formData.append('category', request.category)
       if (request.description) formData.append('description', request.description)
       if (request.tags) formData.append('tags', JSON.stringify(request.tags))
-      
+
       const response = await documentsApi.upload(formData)
 
       clearInterval(progressInterval)
@@ -133,15 +129,15 @@ export function useDocumentUpload() {
       const pollStatus = async () => {
         try {
           const status = await documentsApi.getStatus(response.task_id)
-          
+
           setUploads(prev => {
             const current = prev.get(fileId)
             if (!current) return prev
 
             return new Map(prev.set(fileId, {
               ...current,
-              status: status.status === 'completed' ? 'completed' : 
-                     status.status === 'failed' ? 'error' : 'processing',
+              status: status.status === 'completed' ? 'completed' :
+                status.status === 'failed' ? 'error' : 'processing',
               progress: status.progress,
               error: status.error,
             }))
@@ -179,7 +175,7 @@ export function useDocumentUpload() {
       throw err
     } finally {
       abortControllersRef.current.delete(fileId)
-      
+
       // 檢查是否還有其他上傳中的檔案
       setUploads(prev => {
         const hasUploading = Array.from(prev.values()).some(
@@ -192,15 +188,15 @@ export function useDocumentUpload() {
   }, [])
 
   const uploadMultiple = useCallback(async (
-    files: File[], 
-    companyId: number, 
+    files: File[],
+    companyId: number,
     options?: {
       category?: string
       description?: string
       tags?: string[]
     }
   ) => {
-    const uploadPromises = files.map(file => 
+    const uploadPromises = files.map(file =>
       uploadDocument({
         file,
         company_id: companyId,
@@ -241,7 +237,7 @@ export function useDocumentUpload() {
     // 取消所有進行中的上傳
     abortControllersRef.current.forEach(controller => controller.abort())
     abortControllersRef.current.clear()
-    
+
     setUploads(new Map())
     setIsUploading(false)
   }, [])
@@ -300,14 +296,13 @@ export function useBatchOperations() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const executeBatch = useCallback(async (request: BatchOperationRequest) => {
+  const executeBatch = useCallback(async () => {
     setLoading(true)
     setError(null)
 
     try {
       // 批次操作暫時不可用
       throw new Error('批次操作功能暫未實作')
-      return response
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '批次操作失敗'
       setError(errorMessage)

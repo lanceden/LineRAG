@@ -25,21 +25,16 @@ export type SupportedFileType =
 
 // 文檔元資料
 export interface DocumentMetadata {
-  id: string
-  filename: string
+  document_id: string
+  original_filename: string
   file_path: string
   file_size: number
-  file_type: string
+  mime_type: string
   company_id: number
-  uploaded_by: number
-  status: DocumentStatus
+  created_by: string
+  processing_status: string
   created_at: string
   updated_at: string
-  category?: string
-  description?: string
-  tags?: string[]
-  metadata?: Record<string, unknown>
-  processing_progress?: number
   error_message?: string
 }
 
@@ -84,12 +79,9 @@ export interface DocumentListParams extends Record<string, unknown> {
 
 // 文檔列表回應
 export interface DocumentListResponse {
+  company_id: number
   documents: DocumentMetadata[]
-  total: number
-  page: number
-  limit: number
-  has_next: boolean
-  has_prev: boolean
+  total_count: number
 }
 
 // 批次操作類型
@@ -118,11 +110,8 @@ export interface BatchOperationResponse {
 export interface DocumentStats {
   total_documents: number
   total_size: number
-  by_status: Record<DocumentStatus, number>
-  by_type: Record<string, number>
-  by_category: Record<string, number>
-  recent_uploads: number
-  processing_queue: number
+  documents_by_status: Record<string, number>
+  documents_by_type: Record<string, number>
 }
 
 // 文檔上傳配置

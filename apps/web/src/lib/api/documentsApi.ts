@@ -34,8 +34,8 @@ export const documentsApi = {
   /**
    * 刪除文檔
    */
-  delete: (documentId: string): Promise<{ message: string }> =>
-    httpClient.delete(`/api/ingest/document/${documentId}`),
+  delete: (companyId: number, documentId: string): Promise<{ message: string }> =>
+    httpClient.delete(`/api/ingest/documents/${companyId}/${documentId}`),
 
   /**
    * 獲取文檔統計
