@@ -35,6 +35,7 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     """文檔擷取回應"""
 
-    task_id: str
-    status: str
+    success: bool
     message: str
+    document_id: Optional[str] = None
+    task_id: Optional[str] = None

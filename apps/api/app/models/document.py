@@ -76,6 +76,7 @@ class DocumentMetadata(Base):
     # 時間戳記
     uploaded_at = Column(DateTime, default=datetime.utcnow, comment="上傳時間")
     processed_at = Column(DateTime, comment="處理完成時間")
+    deleted_at = Column(DateTime, comment="刪除時間")
     created_by = Column(String(255), comment="建立者")
 
     # 關聯

@@ -1,5 +1,6 @@
 """
 RAG-Anything 查詢處理器
+使用獨立文檔文件夾架構進行多文檔查詢合併
 """
 
 import asyncio
@@ -63,7 +64,7 @@ def _cleanup_expired_cache():
 
 
 class QueryHandler:
-    """查詢處理器"""
+    """查詢處理器 - 基於獨立文檔文件夾架構"""
 
     def __init__(self, rag_service, config: RAGConfig, db_manager: DatabaseManager):
         self.rag_service = rag_service  # 使用服務引用而不是實例
@@ -140,7 +141,7 @@ class QueryHandler:
     async def _execute_query(
         self, query: str, mode: str = "naive", company_id: str = None
     ) -> str:
-        """實際執行查詢的內部方法"""
+        """實際執行查詢的內部方法 - 使用獨立文檔文件夾架構"""
         if company_id:
             # 驗證資料存在
             if not _should_skip_precheck(int(company_id)):
@@ -149,18 +150,17 @@ class QueryHandler:
                     raise ValueError(f"No data found for company {company_id}")
                 _mark_precheck(int(company_id))
 
-            # 獲取 RAG 實例
-            rag_instance = await self.rag_service.get_rag_instance_for_company(
-                company_id
+            # 使用 RAGAnythingService 進行多文檔查詢合併
+            result = await self.rag_service.query_documents(
+                query=query, company_id=company_id, mode=mode
             )
-
-            # 確保內容已載入
-            await self._ensure_company_content_loaded(company_id, rag_instance)
-
-            # 執行查詢
-            result = await rag_instance.aquery(query, mode=mode, enable_rerank=False)
-
-            return result
+            
+            if result.get("status") == "success":
+                # 簡單的結果格式化
+                formatted_result = self._format_query_results(result.get("results", []))
+                return formatted_result
+            else:
+                raise ValueError(f"Query failed: {result.get('message', 'Unknown error')}")
         else:
             raise ValueError("Query requires company_id")
 
@@ -200,7 +200,7 @@ class QueryHandler:
     async def query_text(
         self, query: str, mode: str = "hybrid", company_id: str = None
     ) -> str:
-        """純文本查詢 - 現在使用智慧快取"""
+        """純文本查詢 - 現在使用智慧快取和多文檔合併"""
         print("=" * 80)
         print(f"🔍 開始 RAG 文本查詢")
         print(f"   查詢內容: {query}")
@@ -230,125 +230,35 @@ class QueryHandler:
             print("=" * 80)
             raise Exception(f"Text query failed: {str(e)}")
 
-        except Exception as e:
-            print(f"❌ RAG 查詢失敗: {str(e)}")
-            print("=" * 80)
-            raise Exception(f"Query failed: {str(e)}")
-
-    async def _ensure_company_content_loaded(self, company_id: str, rag_instance):
-        """確保公司所有文檔的 content_list 已載入 RAG (版本檢查機制)"""
-        try:
-            # 檢查 kv_store_parse_cache.json 的修改時間
-            import os
-            import json
-            from pathlib import Path
-
-            cache_file = Path(
-                f"./rag_storage/company_{company_id}/kv_store_parse_cache.json"
-            )
-            if not cache_file.exists():
-                print(f"⚠️ 解析快取檔案不存在: {cache_file}")
-                return
-
-            cache_file_mtime = os.path.getmtime(cache_file)
-
-            # 檢查 RAG 實例是否有記錄最後載入時間
-            if not hasattr(rag_instance, "_last_loaded_time"):
-                rag_instance._last_loaded_time = 0
-                print(f"🔍 首次載入公司 {company_id} 的文檔...")
-            elif cache_file_mtime <= rag_instance._last_loaded_time:
-                print(
-                    f"⏭️ 快取檔案未更新，跳過載入 (快取時間: {cache_file_mtime}, 上次載入: {rag_instance._last_loaded_time})"
-                )
-                return
-            else:
-                print(
-                    f"🔄 檢測到快取檔案更新，重新載入文檔 (快取時間: {cache_file_mtime} > 上次載入: {rag_instance._last_loaded_time})"
-                )
-
-            # 2. 查資料庫取回公司所有的文檔
-            from app.core.database import SessionLocal
-            from app.models.document import DocumentMetadata
-
-            db = SessionLocal()
-            try:
-                company_docs = (
-                    db.query(DocumentMetadata)
-                    .filter(
-                        DocumentMetadata.company_id == int(company_id),
-                        DocumentMetadata.processing_status == "completed",
-                    )
-                    .all()
-                )
-
-                print(f"📊 找到 {len(company_docs)} 個已完成的文檔")
-
-                if not company_docs:
-                    print("⚠️ 公司沒有已完成的文檔")
-                    return
-
-                # 3. 讀取 kv_store_parse_cache.json
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    parse_cache = json.load(f)
-
-                print(f"📄 載入解析快取，共 {len(parse_cache)} 個項目")
-
-                # 4. 對每個文檔執行 insert_content_list
-                loaded_count = 0
-                for doc in company_docs:
-                    lightrag_doc_id = doc.lightrag_doc_id
-                    if not lightrag_doc_id:
-                        continue
-
-                    # 在 parse_cache 中找到對應的 content_list
-                    cache_entry = None
-                    for cache_key, cache_data in parse_cache.items():
-                        if cache_data.get("doc_id") == lightrag_doc_id:
-                            cache_entry = cache_data
-                            break
-
-                    if not cache_entry:
-                        print(f"⚠️ 找不到 {lightrag_doc_id} 的解析快取")
-                        continue
-
-                    content_list = cache_entry.get("content_list", [])
-                    if not content_list:
-                        print(f"⚠️ {doc.original_filename} 的 content_list 為空")
-                        continue
-
-                    print(
-                        f"📝 載入 {doc.original_filename} 的 content_list ({len(content_list)} 項)"
-                    )
-
-                    # 使用 insert_content_list 載入到 RAG
-                    await rag_instance.insert_content_list(
-                        content_list=content_list,
-                        file_path=doc.original_filename,
-                        doc_id=lightrag_doc_id,
-                    )
-                    loaded_count += 1
-
-                # 更新最後載入時間
-                rag_instance._last_loaded_time = cache_file_mtime
-                print(
-                    f"✅ 成功載入 {loaded_count} 個文檔到 RAG (更新時間戳: {cache_file_mtime})"
-                )
-
-            finally:
-                db.close()
-
-        except Exception as e:
-            print(f"⚠️ 載入公司文檔時出錯: {e}")
-            # 不拋出異常，讓查詢繼續進行
+    def _format_query_results(self, results: List[Dict[str, Any]]) -> str:
+        """格式化查詢結果為文本"""
+        if not results:
+            return "沒有找到相關的文檔內容。"
+        
+        formatted_parts = []
+        
+        for i, result in enumerate(results, 1):
+            doc_id = result.get("doc_id", "unknown")
+            score = result.get("score", 0)
+            content = result.get("content", "")
+            
+            formatted_parts.append(f"\n=== 結果 {i} (文檔: {doc_id}, 相關度: {score:.2f}) ===")
+            formatted_parts.append(content)
+        
+        # 添加總結
+        summary = f"\n\n=== 查詢總結 ===\n共找到 {len(results)} 個相關結果"
+        formatted_parts.append(summary)
+        
+        return "\n".join(formatted_parts)
 
     async def query_multimodal(
         self,
         query: str,
         multimodal_content: List[Dict],
-        mode: str = "hybrid",
+        mode: str = "naive",
         company_id: str = None,
     ) -> str:
-        """多模態查詢"""
+        """多模態查詢 - 使用獨立文檔文件夾架構"""
         print("=" * 80)
         print(f"🔍 開始 RAG 多模態查詢")
         print(f"   查詢內容: {query}")
@@ -358,53 +268,104 @@ class QueryHandler:
         print("=" * 80)
 
         try:
-            # 查詢前檢查數據庫狀態
-            await self._check_database_status_before_query(query, company_id)
-
-            # 動態創建或獲取 RAG 實例
-            if company_id:
-                # 為特定公司創建 RAG 實例
-                rag_instance = await self.rag_service.get_rag_instance_for_company(
-                    str(company_id)
-                )
-
-                print(f"🚀 執行多模態 RAG 查詢...")
-
-                # 將多模態內容整合到查詢中
-                multimodal_text = self._format_multimodal_content(multimodal_content)
-                enhanced_query = f"{query}\n\n多模態內容:\n{multimodal_text}"
-
-                # 強制使用 naive 模式，避免觸發 MinerU
-                safe_mode = "naive"
-                print(f"🔧 使用安全查詢模式: {safe_mode} (避免觸發 MinerU)")
-
-                # 創建查詢參數
-                from lightrag import QueryParam
-
-                query_param = QueryParam(
-                    mode=safe_mode,
-                    response_type="Multiple Paragraphs",
-                    top_k=10,
-                    enable_rerank=False,
-                )
-
-                result = await rag_instance.aquery(
-                    query=enhanced_query, param=query_param
-                )
-            else:
-                # 多模態查詢必須有公司ID，不允許無公司限制的查詢
+            if not company_id:
                 raise ValueError("Multimodal query requires company_id")
 
-            print(f"✅ 多模態 RAG 查詢完成")
-            print(f"   結果長度: {len(result)} 字符")
-            print("=" * 80)
+            # 驗證資料存在
+            if not _should_skip_precheck(int(company_id)):
+                data_exists = await verify_query_data_exists(int(company_id))
+                if not data_exists:
+                    raise ValueError(f"No data found for company {company_id}")
+                _mark_precheck(int(company_id))
 
-            return result
+            # 將多模態內容整合到查詢中
+            multimodal_text = self._format_multimodal_content(multimodal_content)
+            enhanced_query = f"{query}\n\n多模態內容:\n{multimodal_text}"
+
+            print(f"🚀 執行多模態 RAG 查詢...")
+
+            # 使用 RAGAnythingService 進行多文檔查詢合併
+            result = await self.rag_service.query_documents(
+                query=enhanced_query, company_id=company_id, mode=mode
+            )
+            
+            if result.get("status") == "success":
+                # 格式化結果並添加多模態資訊
+                formatted_result = self._format_multimodal_query_results(
+                    result.get("results", []), multimodal_content
+                )
+                return formatted_result
+            else:
+                raise ValueError(f"Multimodal query failed: {result.get('message', 'Unknown error')}")
 
         except Exception as e:
             print(f"❌ 多模態 RAG 查詢失敗: {str(e)}")
             print("=" * 80)
             raise Exception(f"Multimodal query failed: {str(e)}")
+
+    def _format_multimodal_content(self, multimodal_content: List[Dict]) -> str:
+        """格式化多模態內容為文本"""
+        formatted_parts = []
+
+        for i, content in enumerate(multimodal_content):
+            content_type = content.get("type", "unknown")
+
+            if content_type == "image":
+                # 圖片內容 - 包含描述和base64數據
+                description = content.get("description", "圖片內容")
+                base64_data = content.get("data", "")
+                formatted_parts.append(f"[圖片 {i+1}] {description}")
+                if base64_data:
+                    formatted_parts.append(f"Base64數據長度: {len(base64_data)} 字元")
+
+            elif content_type == "text":
+                # 文本內容
+                text_data = content.get("data", "")
+                formatted_parts.append(f"[文本 {i+1}] {text_data}")
+
+            else:
+                # 其他類型
+                data = content.get("data", "")
+                formatted_parts.append(f"[{content_type} {i+1}] {str(data)}")
+
+        return "\n".join(formatted_parts)
+
+    def _format_multimodal_query_results(self, results: List[Dict[str, Any]], multimodal_content: List[Dict]) -> str:
+        """格式化多模態查詢結果"""
+        if not results:
+            return "沒有找到相關的文檔內容。"
+        
+        formatted_parts = []
+        
+        # 多模態內容概要
+        formatted_parts.append(f"=== 多模態查詢概要 ===")
+        formatted_parts.append(f"多模態內容數量: {len(multimodal_content)} 個")
+        
+        content_types = [content.get("type", "unknown") for content in multimodal_content]
+        type_counts = {}
+        for t in content_types:
+            type_counts[t] = type_counts.get(t, 0) + 1
+        
+        for content_type, count in type_counts.items():
+            formatted_parts.append(f"- {content_type}: {count} 個")
+        
+        formatted_parts.append("")
+        
+        # 查詢結果
+        for i, result in enumerate(results, 1):
+            doc_id = result.get("doc_id", "unknown")
+            score = result.get("score", 0)
+            content = result.get("content", "")
+            
+            formatted_parts.append(f"=== 結果 {i} (文檔: {doc_id}, 相關度: {score:.2f}) ===")
+            formatted_parts.append(content)
+            formatted_parts.append("")
+        
+        # 總結
+        summary = f"=== 多模態查詢總結 ===\n共找到 {len(results)} 個相關結果"
+        formatted_parts.append(summary)
+        
+        return "\n".join(formatted_parts)
 
     async def robust_openai_call(
         self,
@@ -538,30 +499,3 @@ class QueryHandler:
 
         error_lower = error_msg.lower()
         return any(err in error_lower for err in retryable_errors)
-
-    def _format_multimodal_content(self, multimodal_content: List[Dict]) -> str:
-        """格式化多模態內容為文本"""
-        formatted_parts = []
-
-        for i, content in enumerate(multimodal_content):
-            content_type = content.get("type", "unknown")
-
-            if content_type == "image":
-                # 圖片內容 - 包含描述和base64數據
-                description = content.get("description", "圖片內容")
-                base64_data = content.get("data", "")
-                formatted_parts.append(f"[圖片 {i+1}] {description}")
-                if base64_data:
-                    formatted_parts.append(f"Base64數據長度: {len(base64_data)} 字符")
-
-            elif content_type == "text":
-                # 文本內容
-                text_data = content.get("data", "")
-                formatted_parts.append(f"[文本 {i+1}] {text_data}")
-
-            else:
-                # 其他類型
-                data = content.get("data", "")
-                formatted_parts.append(f"[{content_type} {i+1}] {str(data)}")
-
-        return "\n".join(formatted_parts)

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +12,6 @@ from app.core.middleware import PermissionMiddleware
 
 # Services (initialize on startup)
 from app.services.multitenant_rag import get_multitenant_rag_service
-from app.services.rag_anything import get_rag_service
 from app.services.resource_monitor import (
     start_resource_monitoring,
     stop_resource_monitoring,
@@ -34,63 +34,108 @@ from app.routers.permissions import router as permissions_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan events."""
+    """Application lifespan events with robust error handling."""
     logger = setup_logging()
 
     # Startup
     logger.info("🚀 Starting LineRAG API with Multi-Tenant RAG-Anything...")
 
-    # Initialize database tables
+    startup_tasks = []
+    cleanup_tasks = []
+
     try:
-        create_tables()
-        logger.info("✅ Database tables initialized successfully")
+        # Initialize database tables
+        try:
+            create_tables()
+            logger.info("✅ Database tables initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize database tables: {e}")
+            # Do not crash the app; health endpoint will reflect the error state.
+
+        # Initialize Multi-Tenant RAG service with error handling
+        try:
+            multitenant_rag_service = get_multitenant_rag_service()
+            startup_tasks.append(multitenant_rag_service)
+
+            # 清空所有緩存，防止舊狀態引起重複對話
+            if hasattr(multitenant_rag_service, "clear_all_caches"):
+                multitenant_rag_service.clear_all_caches()
+            logger.info("✅ Multi-Tenant RAG service initialized successfully")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Multi-Tenant RAG service: {e}")
+            # Don't raise here, continue with degraded functionality
+            multitenant_rag_service = None
+
+        # 啟動資源監控
+        try:
+            resource_monitor = await start_resource_monitoring()
+            startup_tasks.append(resource_monitor)
+            logger.info("✅ Resource monitoring started successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to start resource monitoring: {e}")
+            # Continue without resource monitoring
+
+        # RAG-Anything 服務將在第一次使用時按需初始化（多租戶模式）
+        logger.info("✅ 服務初始化完成（使用多租戶模式）")
+
+        yield
+
+    except asyncio.CancelledError:
+        logger.warning("⚠️  Application startup was cancelled")
+        raise
     except Exception as e:
-        logger.error(f"❌ Failed to initialize database tables: {e}")
-        # Do not crash the app; health endpoint will reflect the error state.
+        logger.error(f"❌ Critical error during application startup: {e}")
+        raise
+    finally:
+        # Shutdown - Always execute cleanup, even if startup failed
+        logger.info("🛑 Shutting down LineRAG API...")
 
-    # Initialize Multi-Tenant RAG service
-    multitenant_rag_service = get_multitenant_rag_service()
+        # Execute cleanup tasks with timeout protection
+        cleanup_timeout = 30  # seconds
+        try:
+            await asyncio.wait_for(
+                _perform_cleanup(cleanup_tasks, logger), timeout=cleanup_timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"❌ Cleanup timed out after {cleanup_timeout} seconds")
+        except Exception as e:
+            logger.error(f"❌ Error during cleanup: {e}")
+        finally:
+            logger.info("✅ Application shutdown complete")
 
-    # 清空所有緩存，防止舊狀態引起重複對話
-    multitenant_rag_service.clear_all_caches()
 
-    logger.info("✅ Multi-Tenant RAG service initialized successfully")
+async def _perform_cleanup(cleanup_tasks, logger):
+    """Perform cleanup tasks with proper error handling."""
+    # Cleanup Multi-Tenant RAG service
+    for task in cleanup_tasks:
+        try:
+            if hasattr(task, "cleanup_all_services"):
+                await task.cleanup_all_services()
+                logger.info("✅ Multi-Tenant RAG service cleaned up")
+            elif hasattr(task, "stop_monitoring"):
+                await task.stop_monitoring()
+                logger.info("✅ Resource monitoring stopped")
+        except asyncio.CancelledError:
+            logger.warning("⚠️  Cleanup task was cancelled, continuing with other tasks")
+            continue
+        except Exception as e:
+            logger.error(f"❌ Error cleaning up task: {e}")
+            continue
 
-    # 啟動資源監控
+    # Additional cleanup for any remaining resources
     try:
-        await start_resource_monitoring()
-        logger.info("✅ Resource monitoring started successfully")
+        # Force cleanup of any remaining async tasks
+        current_task = asyncio.current_task()
+        if current_task:
+            # Cancel any child tasks that might still be running
+            for task in asyncio.all_tasks():
+                if task != current_task and not task.done():
+                    task.cancel()
+
+        logger.info("✅ All cleanup tasks completed")
     except Exception as e:
-        logger.error(f"❌ Failed to start resource monitoring: {e}")
-
-    # Initialize RAG-Anything service
-    try:
-        rag_service = get_rag_service()
-        logger.info(
-            "📦 RAG-Anything service instance created, attempting initialization..."
-        )
-        await rag_service.initialize()
-        logger.info("✅ RAG-Anything service initialized successfully")
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize RAG-Anything service: {e}")
-        logger.error(f"❌ Error type: {type(e).__name__}")
-        import traceback
-
-        logger.error(f"❌ Full traceback: {traceback.format_exc()}")
-        # Continue anyway, service will be initialized on first use
-
-    yield
-
-    # Shutdown
-    logger.info("🛑 Shutting down LineRAG API...")
-    await multitenant_rag_service.cleanup_all_services()
-
-    # 停止資源監控
-    try:
-        await stop_resource_monitoring()
-        logger.info("✅ Resource monitoring stopped successfully")
-    except Exception as e:
-        logger.error(f"❌ Failed to stop resource monitoring: {e}")
+        logger.error(f"❌ Error in final cleanup: {e}")
 
 
 app = FastAPI(

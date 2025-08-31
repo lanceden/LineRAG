@@ -518,14 +518,12 @@ class CompanyService:
     @staticmethod
     def _create_company_directories(company: Company):
         """建立公司相關目錄"""
-        import os
-
         # 使用統一路徑邏輯創建公司目錄
         try:
             company_rag_dir = f"./rag_storage/company_{company.id}"
             company_upload_dir = f"./uploads/company_{company.id}"
             company_output_dir = f"./output/company_{company.id}"
-            
+
             os.makedirs(company_rag_dir, exist_ok=True)
             os.makedirs(company_upload_dir, exist_ok=True)
             os.makedirs(company_output_dir, exist_ok=True)
@@ -535,8 +533,6 @@ class CompanyService:
     @staticmethod
     def _calculate_directory_size(directory: str) -> int:
         """計算目錄大小"""
-        import os
-
         total_size = 0
         try:
             for dirpath, _, filenames in os.walk(directory):

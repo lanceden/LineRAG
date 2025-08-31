@@ -1,11 +1,12 @@
 """
-多租戶 RAG-Anything 服務管理器
+多租戶 RAG-Anything 服務管理器 - 新獨立文件夾架構版本
 """
 
 import os
 import asyncio
 import psutil
 import threading
+import shutil
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 
 
 class ResourceManager:
-    """資源管理器"""
+    """資源管理器 - 適配獨立文件夾架構"""
 
     def __init__(self):
         self.company_memory_usage = {}
@@ -25,6 +26,9 @@ class ResourceManager:
         self.max_storage_per_company = (
             int(os.getenv("MAX_STORAGE_PER_COMPANY_GB", "1")) * 1024 * 1024 * 1024
         )  # 預設 1GB
+        self.max_documents_per_company = int(
+            os.getenv("MAX_DOCUMENTS_PER_COMPANY", "100")
+        )  # 預設 100個文檔
         self._lock = threading.Lock()
 
     async def check_memory_usage(self, company_id: int) -> Dict[str, Any]:
@@ -53,12 +57,9 @@ class ResourceManager:
                 ),
             }
 
-            with self._lock:
-                self.company_memory_usage[company_id] = estimated_memory_per_company
-
             if usage_percent > 80:
                 print(
-                    f"⚠️ 公司 {company_id} 記憶體使用率: {usage_percent:.1f}% ({estimated_memory_per_company / 1024 / 1024:.1f}MB)"
+                    f"⚠️ 公司 {company_id} 記憶體使用率: {usage_percent:.1f}% ({estimated_memory_per_company / 1024 / 1024:.0f}MB)"
                 )
 
             return result
@@ -67,32 +68,46 @@ class ResourceManager:
             print(f"❌ 檢查記憶體使用量失敗: {e}")
             return {"status": "error", "message": str(e)}
 
-    async def check_storage_quota(self, company_id: int) -> Dict[str, Any]:
-        """檢查公司儲存配額"""
+    async def check_storage_usage(self, company_id: int) -> Dict[str, Any]:
+        """檢查公司儲存使用量 - 適配獨立文件夾架構"""
         try:
-            company_dir = f"./rag_storage/company_{company_id}"
+            # 使用新的獨立文件夾路徑結構
+            company_dir = Path(f"./rag_storage/company_{company_id}")
 
-            if not os.path.exists(company_dir):
+            if not company_dir.exists():
                 return {
                     "company_id": company_id,
                     "storage_usage": 0,
                     "storage_limit": self.max_storage_per_company,
-                    "usage_percent": 0.0,
+                    "usage_percent": 0,
+                    "document_count": 0,
                     "status": "ok",
                 }
 
-            # 計算目錄總大小
             total_size = 0
-            file_count = 0
+            document_count = 0
 
-            for dirpath, dirnames, filenames in os.walk(company_dir):
-                for filename in filenames:
-                    filepath = os.path.join(dirpath, filename)
-                    try:
-                        total_size += os.path.getsize(filepath)
-                        file_count += 1
-                    except OSError:
-                        pass
+            document_folders = []
+
+            # 遍歷所有文檔文件夾（只計算以 doc- 開頭的文件夾）
+            for doc_folder in company_dir.iterdir():
+                if doc_folder.is_dir() and doc_folder.name.startswith('doc-'):
+                    folder_size = 0
+                    # 計算文件夾大小
+                    for file_path in doc_folder.rglob("*"):
+                        if file_path.is_file():
+                            file_size = file_path.stat().st_size
+                            folder_size += file_size
+                            total_size += file_size
+                    
+                    if folder_size > 0:  # 只計算非空文件夾
+                        document_count += 1
+                        document_folders.append({
+                            "doc_id": doc_folder.name,
+                            "size": folder_size,
+                            "size_mb": folder_size / 1024 / 1024,
+                            "files": len([f for f in doc_folder.rglob("*") if f.is_file()])
+                        })
 
             usage_percent = (total_size / self.max_storage_per_company) * 100
 
@@ -101,7 +116,10 @@ class ResourceManager:
                 "storage_usage": total_size,
                 "storage_limit": self.max_storage_per_company,
                 "usage_percent": usage_percent,
-                "file_count": file_count,
+                "document_count": document_count,
+                "document_folders": document_folders,
+                "storage_usage_mb": total_size / 1024 / 1024,
+                "storage_limit_mb": self.max_storage_per_company / 1024 / 1024,
                 "status": (
                     "ok"
                     if usage_percent < 80
@@ -111,8 +129,10 @@ class ResourceManager:
 
             if usage_percent > 80:
                 print(
-                    f"⚠️ 公司 {company_id} 儲存使用率: {usage_percent:.1f}% ({total_size / 1024 / 1024 / 1024:.2f}GB, {file_count} 檔案)"
+                    f"⚠️ 公司 {company_id} 儲存使用率: {usage_percent:.1f}% ({total_size / 1024 / 1024:.1f}MB, {document_count} 個文檔)"
                 )
+            
+            print(f"📊 公司 {company_id} 儲存情況: {document_count} 個文檔, {total_size / 1024 / 1024:.1f}MB")
 
             return result
 
@@ -120,74 +140,110 @@ class ResourceManager:
             print(f"❌ 檢查儲存配額失敗: {e}")
             return {"status": "error", "message": str(e)}
 
-    async def cleanup_old_data(
-        self, company_id: int, days_old: int = 30
-    ) -> Dict[str, Any]:
-        """清理舊資料"""
+    async def check_document_limit(self, company_id: int) -> Dict[str, Any]:
+        """檢查公司文檔數量限制"""
         try:
-            from datetime import datetime, timedelta
+            company_dir = Path(f"./rag_storage/company_{company_id}")
 
-            company_dir = f"./rag_storage/company_{company_id}"
-            if not os.path.exists(company_dir):
-                return {"status": "ok", "message": "目錄不存在"}
+            if not company_dir.exists():
+                document_count = 0
+            else:
+                document_count = len([f for f in company_dir.iterdir() if f.is_dir() and f.name.startswith('doc-')])
 
-            cutoff_date = datetime.now() - timedelta(days=days_old)
-
-            cleaned_files = 0
-            freed_space = 0
-
-            for dirpath, dirnames, filenames in os.walk(company_dir):
-                for filename in filenames:
-                    filepath = os.path.join(dirpath, filename)
-                    try:
-                        file_mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
-                        if file_mtime < cutoff_date:
-                            size = os.path.getsize(filepath)
-                            os.remove(filepath)
-                            cleaned_files += 1
-                            freed_space += size
-                    except OSError:
-                        pass
+            usage_percent = (document_count / self.max_documents_per_company) * 100
 
             result = {
                 "company_id": company_id,
-                "cleaned_files": cleaned_files,
-                "freed_space": freed_space,
-                "freed_space_mb": freed_space / 1024 / 1024,
-                "status": "ok",
+                "document_count": document_count,
+                "document_limit": self.max_documents_per_company,
+                "usage_percent": usage_percent,
+                "status": (
+                    "ok"
+                    if usage_percent < 80
+                    else "warning" if usage_percent < 95 else "critical"
+                ),
             }
 
-            if cleaned_files > 0:
+            if usage_percent > 80:
                 print(
-                    f"🧹 公司 {company_id} 清理了 {cleaned_files} 個舊檔案，釋放 {freed_space / 1024 / 1024:.1f}MB 空間"
+                    f"⚠️ 公司 {company_id} 文檔數量: {document_count}/{self.max_documents_per_company} ({usage_percent:.1f}%)"
                 )
 
             return result
 
         except Exception as e:
-            print(f"❌ 清理舊資料失敗: {e}")
+            print(f"❌ 檢查文檔限制失敗: {e}")
+            return {"status": "error", "message": str(e)}
+
+    async def cleanup_old_documents(
+        self, company_id: int, days_old: int = 30
+    ) -> Dict[str, Any]:
+        """清理舊文檔 - 基於獨立文件夾架構的原子刪除"""
+        try:
+            from datetime import datetime, timedelta
+
+            company_dir = Path(f"./rag_storage/company_{company_id}")
+            if not company_dir.exists():
+                return {"status": "ok", "message": "目錄不存在"}
+
+            cutoff_date = datetime.now() - timedelta(days=days_old)
+
+            cleaned_documents = 0
+            freed_space = 0
+
+            # 遍歷所有文檔文件夾
+            for doc_folder in company_dir.iterdir():
+                if doc_folder.is_dir():
+                    try:
+                        # 檢查文件夾的修改時間
+                        folder_mtime = datetime.fromtimestamp(
+                            doc_folder.stat().st_mtime
+                        )
+                        if folder_mtime < cutoff_date:
+                            # 計算文件夾大小（用於統計）
+                            folder_size = sum(
+                                f.stat().st_size
+                                for f in doc_folder.rglob("*")
+                                if f.is_file()
+                            )
+
+                            # 原子刪除整個文件夾
+                            shutil.rmtree(doc_folder)
+                            cleaned_documents += 1
+                            freed_space += folder_size
+
+                            print(f"🗑️ 已刪除舊文檔文件夾: {doc_folder.name}")
+
+                    except OSError as e:
+                        print(f"⚠️ 刪除文檔文件夾失敗 {doc_folder.name}: {e}")
+
+            result = {
+                "company_id": company_id,
+                "cleaned_documents": cleaned_documents,
+                "freed_space": freed_space,
+                "freed_space_mb": freed_space / 1024 / 1024,
+                "status": "ok",
+            }
+
+            if cleaned_documents > 0:
+                print(
+                    f"🧹 公司 {company_id} 清理了 {cleaned_documents} 個舊文檔，釋放 {freed_space / 1024 / 1024:.1f}MB 空間"
+                )
+
+            return result
+
+        except Exception as e:
+            print(f"❌ 清理舊文檔失敗: {e}")
             return {"status": "error", "message": str(e)}
 
 
 class MultiTenantRAGService:
-    """多租戶 RAG 服務管理器"""
+    """多租戶 RAG 服務管理器 - 新獨立文件夾架構版本"""
 
     def __init__(self):
         self.tenant_services: Dict[int, RAGAnythingService] = {}
-        # 新增：文檔處理線程池（每個公司隔離）
         self.processing_pools: Dict[int, ThreadPoolExecutor] = {}
-        # 新增：資源管理器
         self.resource_manager = ResourceManager()
-
-    def clear_all_caches(self):
-        """清空所有緩存，防止舊狀態干擾伺服器啟動"""
-        print("🧹 清空多租戶 RAG 服務緩存")
-        self.tenant_services.clear()
-
-        # 清理線程池
-        for company_id, pool in self.processing_pools.items():
-            pool.shutdown(wait=False)
-        self.processing_pools.clear()
 
     async def get_company_rag_service(
         self, company_id: int, db: Session
@@ -206,18 +262,11 @@ class MultiTenantRAGService:
         if not company.is_active:
             raise ValueError(f"Company {company_id} is not active")
 
-        # 建立公司專用的 RAG 服務，傳入 company_id
+        # 建立公司專用的 RAG 服務
         rag_service = RAGAnythingService(company_id=str(company_id))
 
-        # 設定基礎目錄，讓 rag_config.py 自動處理公司ID
-        os.environ["RAG_WORKING_DIR"] = "./rag_storage"
-
-        # 確保公司目錄存在
-        working_dir = f"./rag_storage/company_{company_id}"
-        Path(working_dir).mkdir(parents=True, exist_ok=True)
-
-        # 初始化服務，傳入 company_id
-        await rag_service.initialize(company_id=str(company_id))
+        # 初始化服務
+        await rag_service.initialize(str(company_id))
 
         # 快取服務實例
         self.tenant_services[company_id] = rag_service
@@ -227,424 +276,293 @@ class MultiTenantRAGService:
     async def process_document_async(
         self, company_id: int, file_path: str, db: Session
     ) -> Dict[str, Any]:
-        """異步文檔處理 - 維持多租戶隔離，解決 MinerU 阻塞問題"""
+        """異步文檔處理 - 適配獨立文件夾架構"""
 
         print(f"🚀 開始異步文檔處理 - 公司ID: {company_id}, 文件: {file_path}")
+
+        # 檢查資源限制
+        storage_check = await self.resource_manager.check_storage_usage(company_id)
+        if storage_check["status"] == "critical":
+            return {
+                "status": "error",
+                "message": f"公司 {company_id} 儲存空間不足 ({storage_check['usage_percent']:.1f}%)",
+                "file_path": file_path,
+            }
+
+        doc_limit_check = await self.resource_manager.check_document_limit(company_id)
+        if doc_limit_check["status"] == "critical":
+            return {
+                "status": "error",
+                "message": f"公司 {company_id} 文檔數量已達上限 ({doc_limit_check['document_count']}/{doc_limit_check['document_limit']})",
+                "file_path": file_path,
+            }
 
         # 確保公司有專用的處理線程池
         if company_id not in self.processing_pools:
             self.processing_pools[company_id] = ThreadPoolExecutor(
                 max_workers=1, thread_name_prefix=f"company_{company_id}_processor"
             )
-            print(f"📦 為公司 {company_id} 創建專用線程池")
 
         # 獲取公司專用的 RAG 服務
         rag_service = await self.get_company_rag_service(company_id, db)
 
-        # 在公司專用線程池中執行文檔處理
-        loop = asyncio.get_event_loop()
-
-        print(f"⚡ 將 MinerU 處理移到線程池，避免阻塞主事件循環")
-
         try:
-            # 先嘗試 parse cache（非阻塞，仍在主 loop）
+            # 檢查快取（如果實現了）
             cache_result = await rag_service.process_document_with_cache(
                 file_path, str(company_id)
             )
             if cache_result.get("status") == "hit":
                 return {**cache_result, "status": "success", "cache": True}
 
-            # 生成處理任務ID
-            import uuid
-            task_id = str(uuid.uuid4())
-            
-            # 非阻塞啟動背景處理任務
-            print(f"🚀 啟動非阻塞背景處理任務: {task_id}")
-            asyncio.create_task(
-                self._process_document_background(
-                    task_id, rag_service, file_path, str(company_id)
-                )
+            # 在線程池中執行處理
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                self.processing_pools[company_id],
+                self._process_document_sync,
+                rag_service,
+                file_path,
+                str(company_id),
             )
 
-            # 立即返回，不等待處理完成
-            return {
-                "status": "processing",
-                "message": "文檔處理已在背景啟動",
-                "task_id": task_id,
-                "file_path": file_path,
-                "company_id": company_id
-            }
+            # 確保結果包含必要的字段
+            if result.get("status") == "success" and "doc_id" in result:
+                print(
+                    f"✅ 文檔處理成功 - 公司: {company_id}, 文檔ID: {result['doc_id']}"
+                )
+                return result
+            else:
+                # 如果處理失敗，返回錯誤
+                return {
+                    "status": "error",
+                    "message": f"文檔處理失敗: {result.get('message', '未知錯誤')}",
+                    "file_path": file_path,
+                    "result": result,
+                }
 
         except Exception as e:
             print(f"❌ 異步文檔處理失敗 - 公司ID: {company_id}, 錯誤: {e}")
             return {
                 "status": "error",
-                "message": f"Document processing failed: {str(e)}",
+                "message": f"文檔處理失敗: {str(e)}",
                 "file_path": file_path,
             }
 
     def _process_document_sync(
         self, rag_service, file_path: str, company_id: str
     ) -> Dict[str, Any]:
-        """在線程池中執行的純同步文檔處理 - 避免事件循環問題"""
+        """在線程池中執行的同步文檔處理"""
         import threading
 
-        print(
-            f"🔄 在線程池中執行純同步文檔處理 - 線程ID: {threading.current_thread().name}"
-        )
+        print(f"🔄 在線程池中執行文檔處理 - 線程ID: {threading.current_thread().name}")
 
         try:
-            # 直接調用同步版本，避免事件循環問題
-            print(f"🎯 調用同步文檔處理方法")
-
-            # 這裡需要調用 RAG 服務的同步處理方法
-            # 由於 process_document 是異步的，我們需要在這個線程中創建事件循環
+            # 創建新的事件循環來執行異步處理
             import asyncio
 
-            # 創建新的事件循環
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
             try:
                 result = loop.run_until_complete(
-                    rag_service.process_document(file_path, company_id)
+                    rag_service.process_document(file_path, int(company_id))
                 )
-                print(f"✅ 線程池文檔處理成功")
+                print("✅ 線程池文檔處理成功")
                 return result
             finally:
-                # 簡單清理：直接關閉循環
-                try:
-                    loop.close()
-                except:
-                    pass
+                loop.close()
 
         except Exception as e:
             print(f"❌ 線程池文檔處理失敗: {e}")
-            import traceback
-            
-    async def _process_document_background(self, task_id: str, rag_service, file_path: str, company_id: str):
-        """真正的背景處理任務 - 不阻塞主事件循環"""
-        try:
-            print(f"🔄 背景任務 {task_id} 開始處理文檔: {file_path}")
-            
-            # 在線程池中執行處理
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                self.processing_pools[int(company_id)],
-                self._process_document_sync,
-                rag_service,
-                file_path,
-                company_id,
-            )
-            
-            print(f"✅ 背景任務 {task_id} 處理完成")
-            # 這裡可以更新數據庫狀態、發送通知等
-            
-        except Exception as e:
-            print(f"❌ 背景任務 {task_id} 處理失敗: {e}")
             import traceback
 
             traceback.print_exc()
             return {"status": "error", "message": str(e), "file_path": file_path}
 
-    async def get_company_by_line_channel(
-        self, channel_token: str, db: Session
-    ) -> Optional[Company]:
-        """根據 LINE Channel Token 找到對應的公司"""
-        return (
-            db.query(Company)
-            .filter(
-                Company.line_channel_token == channel_token, Company.is_active == True
-            )
-            .first()
-        )
+    async def delete_document_async(
+        self, company_id: int, document_id: str, db: Session
+    ) -> Dict[str, Any]:
+        """異步文檔刪除 - 基於獨立文件夾架構的原子刪除"""
 
-    async def cleanup_company_service(self, company_id: int):
-        """清理指定公司的 RAG 服務"""
-        if company_id in self.tenant_services:
-            # 這裡可以加入清理邏輯
-            del self.tenant_services[company_id]
+        print(f"🗑️ 開始異步文檔刪除 - 公司ID: {company_id}, 文檔ID: {document_id}")
 
-        # 清理線程池
-        if company_id in self.processing_pools:
-            self.processing_pools[company_id].shutdown(wait=True)
-            del self.processing_pools[company_id]
-            print(f"🧹 已清理公司 {company_id} 的處理線程池")
+        # 檢查文檔是否存在
+        company_dir = Path(f"./rag_storage/company_{company_id}")
+        doc_folder = company_dir / document_id
 
-    async def cleanup_all_services(self):
-        """清理所有 RAG 服務"""
-        for company_id in list(self.tenant_services.keys()):
-            await self.cleanup_company_service(company_id)
+        if not doc_folder.exists():
+            return {
+                "status": "error",
+                "message": f"文檔 {document_id} 不存在",
+                "document_id": document_id,
+            }
 
-    async def check_company_quota(self, company_id: int, db: Session) -> Dict[str, any]:
-        """檢查公司配額限制（完整實作）"""
+        # 獲取公司專用的 RAG 服務
+        rag_service = await self.get_company_rag_service(company_id, db)
+
         try:
-            # 檢查文檔數量限制
-            from app.models.document import Document
+            # 原子刪除文檔文件夾
+            import shutil
 
-            doc_count = (
-                db.query(Document).filter(Document.company_id == company_id).count()
+            # 計算文件夾大小（用於統計）
+            folder_size = sum(
+                f.stat().st_size for f in doc_folder.rglob("*") if f.is_file()
             )
 
-            max_documents = 1000  # 預設限制
-            doc_usage_percent = (doc_count / max_documents) * 100
+            # 刪除整個文件夾
+            shutil.rmtree(doc_folder)
 
-            # 檢查存儲空間使用
-            working_dir = f"./rag_storage/company_{company_id}"
-            storage_usage = 0
-
-            if os.path.exists(working_dir):
-                storage_usage = sum(
-                    os.path.getsize(os.path.join(dirpath, filename))
-                    for dirpath, dirnames, filenames in os.walk(working_dir)
-                    for filename in filenames
-                )
-
-            max_storage = 5 * 1024 * 1024 * 1024  # 5GB 限制
-            storage_usage_percent = (storage_usage / max_storage) * 100
-
-            return {
+            result = {
+                "status": "success",
+                "message": f"文檔 {document_id} 已成功刪除",
+                "document_id": document_id,
                 "company_id": company_id,
-                "documents": {
-                    "current": doc_count,
-                    "limit": max_documents,
-                    "usage_percent": doc_usage_percent,
-                    "available": max_documents - doc_count,
-                },
-                "storage": {
-                    "current_bytes": storage_usage,
-                    "current_mb": storage_usage / 1024 / 1024,
-                    "limit_bytes": max_storage,
-                    "limit_mb": max_storage / 1024 / 1024,
-                    "usage_percent": storage_usage_percent,
-                    "available_mb": (max_storage - storage_usage) / 1024 / 1024,
-                },
-                "warnings": self._get_quota_warnings(
-                    doc_usage_percent, storage_usage_percent
-                ),
+                "freed_space": folder_size,
+                "freed_space_mb": folder_size / 1024 / 1024,
             }
+
+            print(
+                f"✅ 文檔刪除成功 - 公司: {company_id}, 文檔ID: {document_id}, 釋放空間: {folder_size / 1024 / 1024:.1f}MB"
+            )
+            return result
 
         except Exception as e:
+            print(
+                f"❌ 文檔刪除失敗 - 公司ID: {company_id}, 文檔ID: {document_id}, 錯誤: {e}"
+            )
             return {
-                "company_id": company_id,
-                "error": f"Failed to check quota: {str(e)}",
+                "status": "error",
+                "message": f"文檔刪除失敗: {str(e)}",
+                "document_id": document_id,
             }
 
-    def _get_quota_warnings(self, doc_usage: float, storage_usage: float) -> List[str]:
-        """取得配額警告"""
-        warnings = []
+    async def query_documents_async(
+        self, company_id: int, query: str, db: Session, **kwargs
+    ) -> Dict[str, Any]:
+        """異步文檔查詢 - 基於獨立文件夾架構"""
 
-        if doc_usage > 90:
-            warnings.append("Document limit nearly reached (>90%)")
-        elif doc_usage > 80:
-            warnings.append("Document usage high (>80%)")
+        print(f"🔍 開始異步文檔查詢 - 公司ID: {company_id}, 查詢: {query[:50]}...")
 
-        if storage_usage > 90:
-            warnings.append("Storage limit nearly reached (>90%)")
-        elif storage_usage > 80:
-            warnings.append("Storage usage high (>80%)")
+        # 檢查資源使用情況
+        memory_check = await self.resource_manager.check_memory_usage(company_id)
+        if memory_check["status"] == "critical":
+            return {
+                "status": "error",
+                "message": f"公司 {company_id} 記憶體使用率過高 ({memory_check['usage_percent']:.1f}%)",
+                "query": query,
+            }
 
-        return warnings
+        # 獲取公司專用的 RAG 服務
+        rag_service = await self.get_company_rag_service(company_id, db)
 
-    def get_tenant_stats(self) -> Dict[str, any]:
-        """取得多租戶統計資訊（完整實作）"""
         try:
-            memory_usage = self._get_memory_usage()
+            # 執行查詢
+            result = await rag_service.query_documents(query, str(company_id), **kwargs)
 
-            return {
-                "active_tenants": len(self.tenant_services),
-                "tenant_list": list(self.tenant_services.keys()),
-                "memory_usage": memory_usage,
-                "system_info": {
-                    "total_services": len(self.tenant_services),
-                    "service_status": {
-                        company_id: service.get_status()
-                        for company_id, service in self.tenant_services.items()
-                    },
-                },
-            }
-        except Exception as e:
-            return {"error": f"Failed to get tenant stats: {str(e)}"}
-
-    def _get_memory_usage(self) -> Dict[str, float]:
-        """取得記憶體使用情況"""
-        try:
-            import psutil
-
-            process = psutil.Process()
-            memory_info = process.memory_info()
-
-            return {
-                "rss_mb": memory_info.rss / 1024 / 1024,  # 實際記憶體使用
-                "vms_mb": memory_info.vms / 1024 / 1024,  # 虛擬記憶體使用
-                "percent": process.memory_percent(),
-            }
-        except ImportError:
-            return {"rss_mb": 0, "vms_mb": 0, "percent": 0}
-
-    async def cleanup_inactive_services(self, max_idle_time: int = 3600):
-        """清理閒置的服務實例（完整實作）"""
-        try:
-            import time
-
-            current_time = time.time()
-
-            inactive_companies = []
-            for company_id, service in self.tenant_services.items():
-                # 檢查服務最後使用時間
-                if hasattr(service, "last_used_time"):
-                    if current_time - service.last_used_time > max_idle_time:
-                        inactive_companies.append(company_id)
-                elif not service.initialized:
-                    # 未初始化的服務也視為閒置
-                    inactive_companies.append(company_id)
-
-            # 清理閒置服務
-            cleanup_count = 0
-            for company_id in inactive_companies:
-                await self.cleanup_company_service(company_id)
-                cleanup_count += 1
-                print(f"Cleaned up inactive service for company {company_id}")
-
-            return {
-                "cleaned_up": cleanup_count,
-                "remaining_active": len(self.tenant_services),
-                "inactive_companies": inactive_companies,
-            }
+            print(
+                f"✅ 文檔查詢成功 - 公司: {company_id}, 結果數量: {len(result.get('results', []))}"
+            )
+            return result
 
         except Exception as e:
-            return {"error": f"Failed to cleanup inactive services: {str(e)}"}
-
-    # ===== 資源管理方法 =====
-
-    async def check_company_resources(self, company_id: int) -> Dict[str, Any]:
-        """檢查公司資源使用情況"""
-        try:
-            memory_stats = await self.resource_manager.check_memory_usage(company_id)
-            storage_stats = await self.resource_manager.check_storage_quota(company_id)
-
-            # 合併結果
-            combined_status = "ok"
-            if memory_stats.get("status") in ["warning", "critical"]:
-                combined_status = memory_stats["status"]
-            if storage_stats.get("status") in ["warning", "critical"]:
-                combined_status = storage_stats["status"]
-
+            print(f"❌ 文檔查詢失敗 - 公司ID: {company_id}, 錯誤: {e}")
             return {
+                "status": "error",
+                "message": f"文檔查詢失敗: {str(e)}",
+                "query": query,
+            }
+
+    async def get_company_stats(self, company_id: int) -> Dict[str, Any]:
+        """取得公司統計資訊"""
+
+        try:
+            # 並發檢查各項資源使用情況
+            storage_task = self.resource_manager.check_storage_usage(company_id)
+            memory_task = self.resource_manager.check_memory_usage(company_id)
+            doc_limit_task = self.resource_manager.check_document_limit(company_id)
+
+            storage_result, memory_result, doc_limit_result = await asyncio.gather(
+                storage_task, memory_task, doc_limit_task
+            )
+
+            # 計算總體健康狀態
+            statuses = [
+                storage_result["status"],
+                memory_result["status"],
+                doc_limit_result["status"],
+            ]
+
+            # 確定最差的狀態
+            status_priority = {"ok": 0, "warning": 1, "critical": 2, "error": 3}
+            worst_status = max(statuses, key=lambda s: status_priority.get(s, 0))
+
+            stats = {
                 "company_id": company_id,
-                "memory": memory_stats,
-                "storage": storage_stats,
-                "overall_status": combined_status,
+                "status": worst_status,
+                "storage": storage_result,
+                "memory": memory_result,
+                "documents": doc_limit_result,
                 "timestamp": asyncio.get_event_loop().time(),
             }
 
-        except Exception as e:
-            print(f"❌ 檢查公司資源失敗: {e}")
-            return {"status": "error", "message": str(e)}
+            return stats
 
-    async def cleanup_company_resources(
+        except Exception as e:
+            print(f"❌ 取得公司統計失敗: {e}")
+            return {
+                "company_id": company_id,
+                "status": "error",
+                "message": str(e),
+            }
+
+    async def cleanup_company_data(
         self, company_id: int, days_old: int = 30
     ) -> Dict[str, Any]:
-        """清理公司資源"""
+        """清理公司舊資料"""
+
+        print(f"🧹 開始清理公司 {company_id} 的舊資料...")
+
         try:
-            cleanup_result = await self.resource_manager.cleanup_old_data(
+            result = await self.resource_manager.cleanup_old_documents(
                 company_id, days_old
             )
 
-            # 同時清理記憶體中的快取（如果需要的話）
-            if company_id in self.tenant_services:
-                # 這裡可以添加額外的清理邏輯
-                pass
+            if result["status"] == "ok":
+                print(f"✅ 公司 {company_id} 資料清理完成")
+            else:
+                print(
+                    f"❌ 公司 {company_id} 資料清理失敗: {result.get('message', '未知錯誤')}"
+                )
 
+            return result
+
+        except Exception as e:
+            print(f"❌ 清理公司資料失敗: {e}")
             return {
                 "company_id": company_id,
-                **cleanup_result,
-                "timestamp": asyncio.get_event_loop().time(),
+                "status": "error",
+                "message": str(e),
             }
 
-        except Exception as e:
-            print(f"❌ 清理公司資源失敗: {e}")
-            return {"status": "error", "message": str(e)}
 
-    async def get_resource_monitoring_stats(self) -> Dict[str, Any]:
-        """獲取資源監控統計"""
-        try:
-            total_companies = len(self.tenant_services)
-            active_pools = len(self.processing_pools)
-
-            # 收集所有公司的資源統計
-            company_resources = {}
-            for company_id in list(self.tenant_services.keys()):
-                try:
-                    resources = await self.check_company_resources(company_id)
-                    company_resources[str(company_id)] = resources
-                except Exception as e:
-                    company_resources[str(company_id)] = {"error": str(e)}
-
-            return {
-                "total_companies": total_companies,
-                "active_processing_pools": active_pools,
-                "company_resources": company_resources,
-                "resource_manager": {
-                    "max_memory_per_company_mb": self.resource_manager.max_memory_per_company
-                    / 1024
-                    / 1024,
-                    "max_storage_per_company_gb": self.resource_manager.max_storage_per_company
-                    / 1024
-                    / 1024
-                    / 1024,
-                },
-                "timestamp": asyncio.get_event_loop().time(),
-            }
-
-        except Exception as e:
-            print(f"❌ 獲取資源監控統計失敗: {e}")
-            return {"status": "error", "message": str(e)}
-
-    async def monitor_processing_pool_health(self) -> Dict[str, Any]:
-        """監控處理線程池健康狀態"""
-        try:
-            pool_stats = {}
-
-            for company_id, pool in self.processing_pools.items():
-                try:
-                    # 獲取線程池狀態
-                    active_threads = len([t for t in pool._threads if t.is_alive()])
-                    pool_stats[str(company_id)] = {
-                        "max_workers": pool._max_workers,
-                        "active_threads": active_threads,
-                        "pending_tasks": (
-                            pool._work_queue.qsize()
-                            if hasattr(pool._work_queue, "qsize")
-                            else 0
-                        ),
-                        "status": (
-                            "healthy"
-                            if active_threads <= pool._max_workers
-                            else "overloaded"
-                        ),
-                    }
-                except Exception as e:
-                    pool_stats[str(company_id)] = {"error": str(e)}
-
-            return {
-                "total_pools": len(self.processing_pools),
-                "pool_stats": pool_stats,
-                "timestamp": asyncio.get_event_loop().time(),
-            }
-
-        except Exception as e:
-            print(f"❌ 監控處理線程池健康狀態失敗: {e}")
-            return {"status": "error", "message": str(e)}
-
-
-# 全域單例
-_multitenant_rag_service = None
+# 全域實例
+_multitenant_service = None
 
 
 def get_multitenant_rag_service() -> MultiTenantRAGService:
-    """取得多租戶 RAG 服務單例"""
-    global _multitenant_rag_service
-    if _multitenant_rag_service is None:
-        _multitenant_rag_service = MultiTenantRAGService()
-    return _multitenant_rag_service
+    """取得多租戶 RAG 服務實例"""
+    global _multitenant_service
+    if _multitenant_service is None:
+        _multitenant_service = MultiTenantRAGService()
+    return _multitenant_service
+
+
+# 全域實例
+_multitenant_service = None
+
+
+def get_multitenant_rag_service() -> MultiTenantRAGService:
+    """取得多租戶 RAG 服務實例"""
+    global _multitenant_service
+    if _multitenant_service is None:
+        _multitenant_service = MultiTenantRAGService()
+    return _multitenant_service
